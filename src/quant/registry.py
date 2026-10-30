@@ -29,7 +29,8 @@ def trial_sharpes() -> np.ndarray:
     df = load()
     if not len(df):
         return np.array([])
-    return df.loc[df["stage"] != "holdout", "sharpe_net"].dropna().to_numpy(dtype=float)
+    ok = (df["stage"] != "holdout") & (df["verdict"].fillna("") != "INVALID")
+    return df.loc[ok, "sharpe_net"].dropna().to_numpy(dtype=float)
 
 
 def log(family: str, hypothesis: str, variant: str, params: dict, stage: str, stats: dict,

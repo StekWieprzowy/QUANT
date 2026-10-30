@@ -24,20 +24,32 @@ def year_slices(dates: pd.DatetimeIndex, first_test_year: int) -> list[int]:
     return [y for y in sorted(set(dates.year)) if y >= first_test_year]
 
 
-def walk_forward(events: pd.DataFrame, decision_fn: DecisionFn, grid: list[dict], first_test_year: int,
+def as_book(events) -> bt.Book:
+    return events if isinstance(events, bt.Book) else bt.Book({"main": events})
+
+
+def as_dec(d) -> dict[str, np.ndarray]:
+    return d if isinstance(d, dict) else {"main": np.asarray(d, dtype=float)}
+
+
+def walk_forward(events, decision_fn: DecisionFn, grid: list[dict], first_test_year: int,
                  min_train_years: int = 3, cost_mult: float = 1.0, select: str = "sharpe") -> dict:
     """Expanding-window walk-forward: for each test year choose params by net Sharpe on all prior data,
-    stitch the chosen decisions for that year, then run ONE backtest over the stitched decisions.
+    stitch the chosen decisions for that year (per instrument), then run ONE backtest over the stitched
+    decisions (so position transitions at year boundaries are charged correctly).
 
-    Returns dict with result (BacktestResult restricted to OOS years), chosen params per year and the
-    full per-param decisions (cached for neighbourhood analysis)."""
-    dates = pd.DatetimeIndex(events["date"])
-    cache = {i: decision_fn(p) for i, p in enumerate(grid)}
-    full_runs = {i: bt.run(events, d, cost_mult=cost_mult) for i, d in cache.items()}
-    years = year_slices(dates, first_test_year)
-    stitched = np.full(len(events), np.nan)
+    `events` is an event grid (single instrument) or a backtest.Book; decision_fn returns an array or a
+    dict of arrays respectively."""
+    book = as_book(events)
+    # forward-fill "hold" NaNs per param BEFORE stitching, otherwise NaN->0 would flatten every open
+    cache = {i: {k: pd.Series(v).ffill().fillna(0.0).to_numpy() for k, v in as_dec(decision_fn(p)).items()}
+             for i, p in enumerate(grid)}
+    full_runs = {i: bt.run_book(book, d, cost_mult=cost_mult) for i, d in cache.items()}
+    all_dates = book.all_dates()
+    years = year_slices(all_dates, first_test_year)
+    first_year = all_dates.year.min()
+    stitched = {k: np.full(len(ev), np.nan) for k, ev in book.events.items()}
     chosen = {}
-    first_year = dates.year.min()
     for y in years:
         if y - first_year < min_train_years:
             continue
@@ -47,39 +59,46 @@ def walk_forward(events: pd.DataFrame, decision_fn: DecisionFn, grid: list[dict]
             scores[i] = sharpe(tr) if select == "sharpe" else tr.mean()
         best = max(scores, key=scores.get)
         chosen[y] = (grid[best], scores[best])
-        mask = dates.year == y
-        stitched[mask] = cache[best][mask]
-    oos_mask = ~np.isnan(stitched)
-    if not oos_mask.any():
+        for k, ev in book.events.items():
+            mask = pd.DatetimeIndex(ev["date"]).year == y
+            stitched[k][mask] = cache[best][k][mask]
+    if not chosen:
         raise ValueError("no OOS years")
-    first_oos = np.flatnonzero(oos_mask)[0]
-    dec = np.where(oos_mask, stitched, 0.0)
-    res = bt.run(events, dec, cost_mult=cost_mult)
-    oos_dates = pd.DatetimeIndex(events["date"].iloc[first_oos:].unique())
-    return {"result": res, "oos_start": oos_dates[0], "chosen": chosen, "decisions": dec,
-            "full_runs": full_runs, "grid": grid}
+    oos_start = pd.Timestamp(year=min(chosen), month=1, day=1)
+    dec = {k: np.where(np.isnan(v), 0.0, v) for k, v in stitched.items()}
+    res = bt.run_book(book, dec, cost_mult=cost_mult)
+    oos_start = res.daily.index[res.daily.index >= oos_start][0]
+    return {"result": res, "oos_start": oos_start, "chosen": chosen, "decisions": dec,
+            "full_runs": full_runs, "grid": grid, "book": book}
 
 
-def oos_slice(res: bt.BacktestResult, start: pd.Timestamp) -> tuple[pd.DataFrame, pd.DataFrame]:
+def oos_slice(res, start: pd.Timestamp) -> tuple[pd.DataFrame, pd.DataFrame]:
     daily = res.daily.loc[res.daily.index >= start]
     tr = res.trades()
     tr = tr.loc[tr["entry"] >= start] if len(tr) else tr
     return daily, tr
 
 
-def permutation_test(events: pd.DataFrame, decision: np.ndarray, start_idx: int = 0, n_perm: int = 500,
+def permutation_test(events, decision, start: pd.Timestamp | None = None, n_perm: int = 500,
                      min_shift: int = 120, cost_mult: float = 1.0, seed: int = SEED) -> dict:
-    """Circular-shift test: shifts the decision series relative to returns, keeping its autocorrelation
-    and exposure profile. p = P(shuffled net Sharpe >= actual)."""
+    """Circular-shift test: shifts each instrument's decision series (same shift for all instruments)
+    relative to returns, keeping autocorrelation and exposure profile; only the OOS part (>= start) is
+    shifted and scored. p = P(shuffled net Sharpe >= actual)."""
     rng = np.random.default_rng(seed)
-    dec = np.asarray(decision, dtype=float)
-    ev = events.iloc[start_idx:].reset_index(drop=True)
-    d = dec[start_idx:]
-    actual = sharpe(bt.run(ev, d, cost_mult=cost_mult).net)
-    n = len(d)
-    # shift by an even number of events so decisions keep their open/close phase
-    shifts = rng.integers(min_shift // 2, max(n // 2 - min_shift // 2, min_shift // 2 + 1), size=n_perm) * 2
-    null = np.array([sharpe(bt.run(ev, np.roll(d, s), cost_mult=cost_mult).net) for s in shifts])
+    book = as_book(events)
+    dec = as_dec(decision)
+    sub_events, sub_dec = {}, {}
+    for k, ev in book.events.items():
+        m = np.ones(len(ev), dtype=bool) if start is None else (pd.DatetimeIndex(ev["date"]) >= start)
+        sub_events[k] = ev.loc[m].reset_index(drop=True)
+        sub_dec[k] = dec[k][m]
+    sbook = bt.Book(sub_events, book.weights, book.borrow_annual, book.borrow_on_abs)
+    actual = sharpe(bt.run_book(sbook, sub_dec, cost_mult).net)
+    n = min(len(v) for v in sub_dec.values())
+    hi = max(n // 2 - min_shift // 2, min_shift // 2 + 1)
+    shifts = rng.integers(min_shift // 2, hi, size=n_perm) * 2  # even -> keep open/close phase
+    null = np.array([sharpe(bt.run_book(sbook, {k: np.roll(v, s) for k, v in sub_dec.items()}, cost_mult).net)
+                     for s in shifts])
     p = (1 + np.sum(null >= actual)) / (1 + n_perm)
     return {"actual": actual, "p_value": float(p), "null_mean": float(null.mean()),
             "null_p95": float(np.quantile(null, 0.95))}

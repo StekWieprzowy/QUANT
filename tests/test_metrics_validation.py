@@ -70,3 +70,19 @@ def test_neighbours():
     nb = validation.neighbours({"n": 10, "z": 1.5, "flag": True})
     assert {"n": 8, "z": 1.5, "flag": True} in nb and {"n": 12, "z": 1.5, "flag": True} in nb
     assert any(abs(q["z"] - 1.8) < 1e-9 for q in nb)
+
+
+def test_walk_forward_stitching_keeps_hold_semantics():
+    """Regression: decisions_at_close leaves NaN (=hold) on open events; stitching must not turn them into 0."""
+    rng = np.random.default_rng(3)
+    dates = pd.bdate_range("2005-01-03", "2010-12-31")
+    c = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(dates))))
+    d = pd.DataFrame({"open": c, "close": c}, index=dates)
+    ev = bt.events_from_daily(d, cost_frac_per_side=0.001)
+    tgt = pd.Series(np.where((dates.month % 2) == 0, 1.0, -1.0), index=dates)
+    fn = lambda p: bt.decisions_at_close(ev, tgt * p["k"])  # noqa: E731
+    wf = validation.walk_forward(ev, fn, [{"k": 1.0}], first_test_year=2008)
+    full = bt.run(ev, fn({"k": 1.0}))
+    n_wf = len(wf["result"].trades())
+    n_full = len(full.trades()[full.trades()["entry"] >= wf["oos_start"]])
+    assert abs(n_wf - n_full) <= 1

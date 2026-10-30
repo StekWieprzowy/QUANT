@@ -34,6 +34,14 @@ def fw20_contracts() -> pd.DataFrame:
     # GPW reports 0 for "no trade" OHLC on illiquid back months
     for c in ["open", "high", "low", "close"]:
         raw.loc[raw[c] <= 0, c] = np.nan
+    # 2014: GPW listed multiplier-20 series (e.g. FW20H1420) in parallel with the old multiplier-10 ones
+    # (FW20H14). Per contract keep the single series with the larger total volume (never mix series).
+    tot = raw.groupby(["code", "name"])["volume"].sum().reset_index()
+    keep = tot.sort_values("volume").groupby("code").tail(1)["name"]
+    dropped = sorted(set(raw["name"]) - set(keep))
+    if dropped:
+        log.info("dropping parallel FW20 series: %s", dropped)
+    raw = raw[raw["name"].isin(set(keep))]
     return raw[["date", "name", "code", "year", "month", "open", "high", "low", "close", "volume", "oi",
                 "n_trades"]].sort_values(["date", "code"]).reset_index(drop=True)
 

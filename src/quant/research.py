@@ -45,7 +45,8 @@ def align_foreign(foreign: pd.DataFrame, sessions: pd.DatetimeIndex, col: str = 
     information set (0 when the foreign market was closed - no stale double counting)."""
     f = foreign[[col]].dropna().sort_index()
     f = f[f[col] > 0]
-    s = pd.DataFrame(index=pd.DatetimeIndex(sessions, name="date"))
+    f.index = pd.DatetimeIndex(f.index).astype("datetime64[ns]")
+    s = pd.DataFrame(index=pd.DatetimeIndex(sessions, name="date").astype("datetime64[ns]"))
     key = s.index if same_day else s.index - pd.Timedelta(days=1)
     m = pd.merge_asof(pd.DataFrame({"k": key}, index=s.index).sort_values("k"),
                       f.rename(columns={col: "v"}).assign(fdate=f.index),
@@ -86,7 +87,7 @@ class Evaluation:
                 f"{'PASS' if self.passed else 'fail'}")
 
 
-def _oos_stats(events, res: bt.BacktestResult, start) -> dict:
+def _oos_stats(res, start) -> dict:
     daily, tr = validation.oos_slice(res, start)
     return metrics.summary(daily["net"], tr, daily["gross"], daily["turnover"])
 
@@ -104,9 +105,8 @@ def evaluate(family: str, hypothesis: str, events: pd.DataFrame,
             registry.log(family, hypothesis, "screen", p, "screen", s, notes="in-sample grid point")
     res = wf["result"]
     start = wf["oos_start"]
-    oos = _oos_stats(events, res, start)
-    first_idx = int(np.flatnonzero(pd.DatetimeIndex(events["date"]) >= start)[0])
-    perm = validation.permutation_test(events, wf["decisions"], start_idx=first_idx, n_perm=n_perm)
+    oos = _oos_stats(res, start)
+    perm = validation.permutation_test(events, wf["decisions"], start=start, n_perm=n_perm)
     oos["p_value"] = perm["p_value"]
     net = res.daily.loc[res.daily.index >= start, "net"]
     n_trials = registry.n_trials() + 1
@@ -123,12 +123,13 @@ def evaluate(family: str, hypothesis: str, events: pd.DataFrame,
     oos["subperiod_sharpes"] = [round(x, 2) for x in sub]
     gate["subperiods"] = sum(x > 0 for x in sub) >= GATE["subperiods_positive"]
     if robustness and oos["sharpe"] > 0.7:
-        res2 = bt.run(events, wf["decisions"], cost_mult=2.0)
+        book = wf["book"]
+        res2 = bt.run_book(book, wf["decisions"], cost_mult=2.0)
         oos["sharpe_2x"] = metrics.sharpe(res2.daily.loc[res2.daily.index >= start, "net"])
         gate["costs_2x"] = oos["sharpe_2x"] > GATE["sharpe_2x_costs"]
         nb = []
         for q in validation.neighbours(last_params):
-            r = bt.run(events, decision_fn(q))
+            r = bt.run_book(book, validation.as_dec(decision_fn(q)))
             nb.append(metrics.sharpe(r.net[r.net.index >= start]))
         oos["neighbour_min_sharpe"] = float(min(nb)) if nb else float("nan")
         gate["neighbours"] = (min(nb) >= GATE["neighbour_sharpe"]) if nb else True

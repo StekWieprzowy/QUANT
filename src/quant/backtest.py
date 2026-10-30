@@ -86,8 +86,9 @@ class BacktestResult:
 
 
 def run(events: pd.DataFrame, decision: pd.Series | np.ndarray, cost_mult: float = 1.0,
-        borrow_annual: float = 0.0) -> BacktestResult:
-    """decision aligned to events (same length / positional). NaN decisions = hold previous decision."""
+        borrow_annual: float = 0.0, borrow_on_abs: bool = False) -> BacktestResult:
+    """decision aligned to events (same length / positional). NaN decisions = hold previous decision.
+    borrow_on_abs: charge borrow on |position| (spread trades always have a short leg)."""
     dec = pd.Series(np.asarray(decision, dtype=float)).ffill().fillna(0.0).to_numpy()
     pos = np.concatenate([[0.0, 0.0], dec[:-2]]) if len(dec) >= 2 else np.zeros(len(dec))
     # pos[k] = position held over interval (k-1, k]  == decision[k-2]
@@ -105,7 +106,8 @@ def run(events: pd.DataFrame, decision: pd.Series | np.ndarray, cost_mult: float
     if borrow_annual:
         # charge borrow on short exposure for each overnight interval (O events start a new day)
         is_open = (events["phase"].to_numpy() == "O")
-        cost = cost + np.where(is_open, np.clip(-pos_before, 0, None) * borrow_annual / 252.0, 0.0)
+        short = np.abs(pos_before) if borrow_on_abs else np.clip(-pos_before, 0, None)
+        cost = cost + np.where(is_open, short * borrow_annual / 252.0 * cost_mult, 0.0)
     ev = events.copy()
     ev["pos"] = pos_after
     ev["pos_held"] = pos_before
@@ -142,6 +144,61 @@ def extract_trades(ev: pd.DataFrame) -> pd.DataFrame:
         cur["exit"] = ev["date"].iloc[-1]
         trades.append(cur)
     return pd.DataFrame(trades, columns=["entry", "exit", "side", "pnl", "n_events"])
+
+
+# ------------------------------------------------------------------ multi-instrument book
+@dataclass
+class Book:
+    """Several instruments, each with its own event grid, combined with fixed capital weights.
+    Portfolio daily return = sum_i w_i * net_i (missing days of an instrument contribute 0)."""
+
+    events: dict[str, pd.DataFrame]
+    weights: dict[str, float] | None = None
+    borrow_annual: float = 0.0
+    borrow_on_abs: bool = False
+
+    def w(self, name: str) -> float:
+        return self.weights[name] if self.weights else 1.0 / len(self.events)
+
+    def all_dates(self) -> pd.DatetimeIndex:
+        return pd.DatetimeIndex(sorted(set().union(*[set(e["date"]) for e in self.events.values()])))
+
+
+@dataclass
+class BookResult:
+    parts: dict[str, BacktestResult]
+    daily: pd.DataFrame
+    weights: dict[str, float]
+
+    @property
+    def net(self) -> pd.Series:
+        return self.daily["net"]
+
+    @property
+    def gross(self) -> pd.Series:
+        return self.daily["gross"]
+
+    def trades(self) -> pd.DataFrame:
+        frames = []
+        for k, r in self.parts.items():
+            t = r.trades()
+            t["pnl"] = t["pnl"] * self.weights[k]
+            t["instrument"] = k
+            frames.append(t)
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def run_book(book: Book, decisions: dict[str, np.ndarray], cost_mult: float = 1.0) -> BookResult:
+    parts = {k: run(ev, decisions[k], cost_mult, book.borrow_annual, book.borrow_on_abs)
+             for k, ev in book.events.items()}
+    idx = book.all_dates()
+    cols = ["gross", "cost", "net", "turnover"]
+    daily = pd.DataFrame(0.0, index=idx, columns=cols)
+    weights = {k: book.w(k) for k in parts}
+    for k, r in parts.items():
+        daily = daily.add(r.daily[cols].reindex(idx).fillna(0.0) * weights[k])
+    daily.index.name = "date"
+    return BookResult(parts, daily, weights)
 
 
 # ------------------------------------------------------------------ helpers to place decisions on the grid
