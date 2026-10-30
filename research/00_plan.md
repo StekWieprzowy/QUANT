@@ -20,7 +20,7 @@ Decyzje podjęte zanim zobaczyłem jakiekolwiek ceny (zapisane w `src/quant/conf
 
 ## 2. Instrument i koszty (bazowe, konserwatywne)
 
-* Instrument główny: ciągła seria FW20 (front-month, rolowanie N=5 sesji przed wygaśnięciem, wygasanie
+* Instrument główny: ciągła seria FW20 (front-month, rolowanie N=3 sesje przed wygaśnięciem — zmienione z 5 po analizie płynności, patrz 01_data_quality.md, wygasanie
   w 3. piątek III/VI/IX/XII, a jeśli to nie sesja – poprzedni dzień sesyjny).
 * Mnożnik: 20 PLN/pkt (koszty liczone tak, jakby obecny mnożnik obowiązywał cały czas – konserwatywnie
   dla prowizji stałej w PLN przy starym mnożniku 10 PLN jest to nawet zaniżenie, więc dodatkowo test 2× kosztów).

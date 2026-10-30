@@ -11,20 +11,54 @@ import pandas as pd
 
 from quant import backtest as bt
 from quant import config
-from quant.data import store
 
 PAIRS = [("PKO", "PEO"), ("PKO", "MBK"), ("PEO", "MBK"), ("BHW", "ING"), ("MIL", "MBK"),
          ("PGE", "TPE"), ("PGE", "ENA"), ("TPE", "ENA")]
 
 
+ISIN = {"PKO": "PLPKO0000016", "PEO": "PLPEKAO00016", "KGH": "PLKGHM000017", "PKN": "PLPKN0000018",
+        "MBK": "PLBRE0000012", "OPL": "PLTLKPL00017", "PZU": "PLPZU0000011", "PGE": "PLPGER000010",
+        "TPE": "PLTAURN00011", "LPP": "PLLPP0000011", "CDR": "PLOPTTC00011", "ACP": "PLSOFTB00016",
+        "CPS": "PLCFRPT00013", "JSW": "PLJSW0000015", "BHW": "PLBH00000012", "ALR": "PLALIOR00045",
+        "MIL": "PLBIG0000016", "ENA": "PLENEA000013", "ING": "PLBSK0000017"}
+
+
+def gpw_spot_fix(ticker: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Replace Yahoo open/high/low with the official GPW values on the days where some stock gapped >10%
+    (data/raw/gpw/t10_spot.parquet, fetched by scripts/fix_stock_gaps.py). Scaled by Yahoo's split factor."""
+    path = config.RAW_DIR / "gpw" / "t10_spot.parquet"
+    if ticker not in ISIN or not path.exists():
+        return df
+    spot = pd.read_parquet(path)
+    spot = spot[spot["isin"] == ISIN[ticker]].set_index("date")
+    df = df.copy()
+    for d, row in spot.iterrows():
+        if d in df.index and row["close"] > 0 and row["open"] > 0:
+            k = df.at[d, "close"] / row["close"]
+            for c in ("open", "high", "low"):
+                df.at[d, c] = row[c] * k
+    return df
+
+
 def adjusted_stock(ticker: str) -> pd.DataFrame:
-    df = store.load_research("yahoo", f"{ticker}.WA", config.RESEARCH_START)
+    from quant import research  # research-truncated unless the one-shot holdout was unlocked
+
+    df = research.load_yahoo(f"{ticker}.WA")
+    df = df[df.index >= config.RESEARCH_START]
     # Yahoo carries GPW holidays as zero-volume rows with bogus prices (e.g. ING 2013-08-15) -> drop
     df = df[df["volume"] > 0]
+    df = gpw_spot_fix(ticker, df)
     f = (df["adjclose"] / df["close"]).where(lambda x: x > 0)
     out = pd.DataFrame({"open": df["open"] * f, "close": df["adjclose"]}, index=df.index)
     # Yahoo sometimes carries no-trade days with volume 0 / open 0 -> open missing
     out.loc[~(df["open"] > 0), "open"] = np.nan
+    # bad opening ticks: outside [low, high] (ACP 2012-10-18 open=4626) or a >25% spike that fully reverts
+    # intraday (CDR 2006-08-29) -> treat open as unknown (engine then uses prev close: zero overnight leg)
+    pc = df["close"].shift(1)
+    g, i = np.log(df["open"] / pc), np.log(df["close"] / df["open"])
+    bad = (df["open"] > df["high"] * 1.001) | (df["open"] < df["low"] * 0.999) | \
+          ((g.abs() > 0.25) & (i.abs() > 0.25) & (np.sign(g) != np.sign(i)))
+    out.loc[bad, "open"] = np.nan
     return out.dropna(subset=["close"])
 
 

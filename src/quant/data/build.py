@@ -15,7 +15,7 @@ from quant.data import futures, gpw, store
 
 log = logging.getLogger(__name__)
 
-ROLL_DAYS = 5
+ROLL_DAYS = 3  # liquidity check (research/01): next series has ~35% of volume 3 sessions before expiry vs ~9% at 5
 
 
 def fw20_contracts() -> pd.DataFrame:

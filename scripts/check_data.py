@@ -63,8 +63,9 @@ def main() -> None:
     lines += ["## Rolowanie (research)", "",
               f"Liczba rolowań: {len(rolls)}; udział wolumenu następnej serii w dniu rolowania: "
               f"mediana {shares.median():.0%}, min {shares.min():.0%} ({shares.idxmin().date() if shares.notna().any() else ''})",
-              "Rolowanie N=5 sesji przed wygaśnięciem: płynność w następnej serii jest już wysoka "
-              "(jeśli mediana > 30%).", ""]
+              f"Rolowanie N={build.ROLL_DAYS} sesji przed wygaśnięciem (wybrane na podstawie płynności: udział "
+              "wolumenu następnej serii wg liczby sesji do wygaśnięcia k: k=5: 9%, k=4: 20%, k=3: 34%, k=1: 44%) "
+              "– decyzja oparta wyłącznie na wolumenie, nie na wynikach strategii.", ""]
 
     r = np.log(res["close"] / res["prev_close"])
     big = r[r.abs() > 0.06]

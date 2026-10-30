@@ -76,7 +76,9 @@ def build(variant: str, daily: pd.DataFrame, events: pd.DataFrame) -> Spec:
         else:
             # gap surprise proxy: S&P move vs what FW20 already did in the overlapping US-open hour is
             # unknown, so use the residual of S&P(d-1) on FW20 close-to-close(d-1) (rolling beta, causal)
-            y = S.ret.reindex(daily.index)
+            # FW20 close-to-close of d-1 (overlaps the US session d-1 until 17:00); NOT of the traded day d
+            # (bug in H045-H049: y of day d leaked the traded session -> caught by quant.lookahead)
+            y = S.ret.reindex(daily.index).shift(1)
             beta = (x.rolling(250, min_periods=120).cov(y) / y.rolling(250, min_periods=120).var()).shift(1)
             resid = x - beta * y
             rsd = resid.rolling(60, min_periods=30).std()
@@ -115,6 +117,39 @@ def build(variant: str, daily: pd.DataFrame, events: pd.DataFrame) -> Spec:
             return (np.sign(dp) * (doi > 0)).fillna(0.0)
         return Spec("positioning", "O1 OI-confirmed k-day trend", events,
                     lambda p: close(sig(p)), param_grid({"k": [5, 10, 20]}))
+
+    # ------------------------------------------------------------ R: residual reversal, stock long / FW20 hedge
+    elif variant == "R1":
+        from quant.strategies import resid
+        book, res = resid.build_book(daily)
+        return Spec("resid", "R1 stock residual reversal, long stock / short beta*FW20", book,
+                    resid.decision_fn_factory(book, res), param_grid({"k": [3, 5], "z_in": [1.5, 2.0]}),
+                    notes="18 long-lived WIG20 names (survivorship bias); long-only stock leg, no borrow")
+
+    elif variant == "R2":  # longer residual horizon: fewer, larger dislocations vs the same ~1% round trip
+        from quant.strategies import resid
+        book, res = resid.build_book(daily)
+        return Spec("resid", "R2 stock residual reversal, 10-20d horizon", book,
+                    resid.decision_fn_factory(book, res),
+                    param_grid({"k": [10, 20], "z_in": [1.5, 2.0], "max_hold": [20]}),
+                    notes="as R1, longer horizon")
+
+    # ------------------------------------------------------------ G: FW20 vs DAX relative value
+    elif variant in ("G1", "G2"):
+        from quant.strategies import glob
+        a = glob.aligned(daily)
+        sev, res = glob.spread_events(a)
+        if variant == "G1":  # hedged spread, both cheap futures
+            return Spec("global_rv", "G1 FW20-beta*DAX spread reversion (hedged)", sev,
+                        lambda p: bt.decisions_at_close(sev, glob.reversion_positions(
+                            glob.residual_z(res, p["k"]), p["z_in"], 0.5, p["max_hold"])),
+                        param_grid({"k": [5, 10], "z_in": [1.5, 2.0], "max_hold": [10]}),
+                        notes="FDAX 3bps/side; DAX index as FDAX proxy")
+        # G2: unhedged FW20 after PL under/over-performance vs DAX (one cheap leg, keeps market beta)
+        z_pl = lambda p: glob.residual_z(res, p["k"]).reindex(daily.index).ffill()  # noqa: E731
+        return Spec("global_rv", "G2 FW20 alone, reversal of residual vs DAX", events,
+                    lambda p: close(glob.reversion_positions(z_pl(p).fillna(0.0), p["z_in"], 0.5, p["max_hold"])),
+                    param_grid({"k": [5, 10], "z_in": [1.5, 2.0], "max_hold": [10]}))
 
     # ------------------------------------------------------------ X: machine learning
     elif variant == "X1":
