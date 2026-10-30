@@ -142,19 +142,23 @@ def stationary_bootstrap_indices(n: int, mean_block: float, rng: np.random.Gener
 
 
 def whites_reality_check(returns: np.ndarray, n_boot: int = 1000, mean_block: float = 10.0,
-                         seed: int = 0) -> float:
-    """White (2000) RC p-value for H0: no strategy (columns) beats zero. returns: T x K daily net returns."""
+                         seed: int = 0, studentize: bool = False) -> float:
+    """White (2000) RC p-value for H0: no strategy (columns) beats zero. returns: T x K daily net returns.
+    studentize=True divides each strategy's mean by its std (SPA-style), so low-volatility strategies are
+    not swamped by high-volatility ones in the max statistic."""
     x = np.asarray(returns, dtype=float)
     if x.ndim == 1:
         x = x[:, None]
     t = x.shape[0]
     mu = x.mean(axis=0)
-    stat = math.sqrt(t) * mu.max()
+    sd = x.std(axis=0, ddof=1) if studentize else np.ones(x.shape[1])
+    sd = np.where(sd > 0, sd, 1.0)
+    stat = math.sqrt(t) * (mu / sd).max()
     rng = np.random.default_rng(seed)
     cnt = 0
     for _ in range(n_boot):
         idx = stationary_bootstrap_indices(t, mean_block, rng)
         mb = x[idx].mean(axis=0)
-        if math.sqrt(t) * (mb - mu).max() >= stat:
+        if math.sqrt(t) * ((mb - mu) / sd).max() >= stat:
             cnt += 1
     return (cnt + 1) / (n_boot + 1)

@@ -1,0 +1,110 @@
+{
+  "n_trials_total": 128,
+  "n_invalid_rows": 35,
+  "n_valid_wf": 20,
+  "whites_reality_check_p": 0.9420289855072463,
+  "oos_sharpes": {
+    "P1": 0.308,
+    "P2": 0.207,
+    "C1": -0.016,
+    "C2": -0.626,
+    "T1": -0.105,
+    "T2": 0.075,
+    "M1": -0.185,
+    "M2": -0.184,
+    "L1": -0.901,
+    "L2": -1.06,
+    "L3": -0.698,
+    "F1": -0.176,
+    "O1": -0.253,
+    "X1": -0.566,
+    "R1": 0.163,
+    "R2": 0.455,
+    "G1": 0.117,
+    "G2": -0.34,
+    "K1": 0.532,
+    "E1": 0.463
+  },
+  "bh_significant_q05": [
+    {
+      "id": "H006",
+      "hypothesis": "P1 z-score pairs book (8 econ. pairs, 1:1)",
+      "p_value": 0.00332,
+      "sharpe_net": 0.3084
+    },
+    {
+      "id": "H011",
+      "hypothesis": "P2 z-score pairs book, high threshold",
+      "p_value": 0.00332,
+      "sharpe_net": 0.2067
+    },
+    {
+      "id": "H115",
+      "hypothesis": "R1 stock residual reversal, long stock / short beta*FW20",
+      "p_value": 0.00332,
+      "sharpe_net": 0.1635
+    },
+    {
+      "id": "H120",
+      "hypothesis": "R2 stock residual reversal, 10-20d horizon",
+      "p_value": 0.00332,
+      "sharpe_net": 0.455
+    },
+    {
+      "id": "H128",
+      "hypothesis": "E1 P1 bank pairs + R2 residual reversal, equal capital slots",
+      "p_value": 0.00332,
+      "sharpe_net": 0.4632
+    }
+  ],
+  "best_valid_wf": [
+    {
+      "id": "H011",
+      "hypothesis": "P2 z-score pairs book, high threshold",
+      "sharpe_net": 0.2067,
+      "dsr": 0.0593
+    },
+    {
+      "id": "H006",
+      "hypothesis": "P1 z-score pairs book (8 econ. pairs, 1:1)",
+      "sharpe_net": 0.3084,
+      "dsr": 0.0
+    },
+    {
+      "id": "H120",
+      "hypothesis": "R2 stock residual reversal, 10-20d horizon",
+      "sharpe_net": 0.455,
+      "dsr": 0.0002
+    },
+    {
+      "id": "H128",
+      "hypothesis": "E1 P1 bank pairs + R2 residual reversal, equal capital slots",
+      "sharpe_net": 0.4632,
+      "dsr": 0.0001
+    },
+    {
+      "id": "H123",
+      "hypothesis": "K1 XS momentum top-n WIG20 names, hedged, monthly",
+      "sharpe_net": 0.5325,
+      "dsr": 0.0003
+    }
+  ],
+  "corr_relative_value": {
+    "P1": {
+      "P1": 1.0,
+      "R2": 0.18,
+      "K1": -0.05
+    },
+    "R2": {
+      "P1": 0.18,
+      "R2": 1.0,
+      "K1": 0.14
+    },
+    "K1": {
+      "P1": -0.05,
+      "R2": 0.14,
+      "K1": 1.0
+    }
+  },
+  "studentized_reality_check_p": 0.2798600699650175
+}

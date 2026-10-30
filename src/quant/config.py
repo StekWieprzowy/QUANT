@@ -55,3 +55,18 @@ class StockCosts:
 
 BASE_FUT_COSTS = FuturesCosts()
 BASE_STOCK_COSTS = StockCosts()
+
+
+# Approx. annual average NBP reference rate (%), public RPP decision history; used as PLN cash/financing
+# proxy (+FUNDING_SPREAD) for long stock legs hedged with FW20 (futures embed r - q, so a hedged long stock
+# position otherwise books the cash rate as alpha). 2026 is an estimate. NBP site is behind a bot wall,
+# hence a hand-entered table (year granularity is sufficient for a carry correction).
+NBP_REF_RATE = {2005: 5.3, 2006: 4.1, 2007: 4.6, 2008: 5.8, 2009: 3.7, 2010: 3.5, 2011: 4.3, 2012: 4.6,
+                2013: 2.9, 2014: 2.4, 2015: 1.6, 2016: 1.5, 2017: 1.5, 2018: 1.5, 2019: 1.5, 2020: 0.6,
+                2021: 0.3, 2022: 5.2, 2023: 6.6, 2024: 5.75, 2025: 5.1, 2026: 4.25}
+FUNDING_SPREAD = 0.25
+
+
+def pln_rate(dates) -> "pd.Series":
+    idx = pd.DatetimeIndex(dates)
+    return pd.Series([(NBP_REF_RATE.get(y, 4.0) + FUNDING_SPREAD) / 100 for y in idx.year], index=idx)

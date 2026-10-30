@@ -134,6 +134,76 @@ def build(variant: str, daily: pd.DataFrame, events: pd.DataFrame) -> Spec:
                     param_grid({"k": [10, 20], "z_in": [1.5, 2.0], "max_hold": [20]}),
                     notes="as R1, longer horizon")
 
+    elif variant == "R3":  # Nagel (2012): reversal = liquidity provision premium, larger when vol is high
+        from quant.strategies import resid
+        book, res = resid.build_book(daily)
+        vol = S.ret.rolling(20).std()
+        high_vol = vol > vol.rolling(250, min_periods=120).median()
+        return Spec("resid", "R3 residual reversal, entries only in high market-vol regime", book,
+                    resid.decision_fn_factory(book, res, allow_entry=high_vol),
+                    param_grid({"k": [5, 10], "z_in": [1.5, 2.0], "max_hold": [15]}),
+                    notes="regime: FW20 20d vol > trailing 250d median (known at close d)")
+
+    elif variant == "X2":  # ML trade selection for the residual-reversal instrument
+        from quant.strategies import ml_resid, resid
+        from quant.strategies.fw20 import hold_signal
+        book, res = resid.build_book(daily)
+        pan = ml_resid.panel(book.events, res, daily)
+        pred = ml_resid.walk_forward_pred(pan, research.FIRST_TEST_YEAR)
+        per = {t: pred[pan["ticker"].to_numpy() == t] for t in book.events}
+
+        def fn(p):
+            return {t: bt.decisions_at_close(ev, hold_signal((per[t] > p["theta"]).astype(float), ml_resid.H))
+                    for t, ev in book.events.items()}
+        return Spec("ml", "X2 LightGBM panel: select residual-reversal longs (5d hold)", book, fn,
+                    param_grid({"theta": [0.010, 0.015]}),
+                    notes="pred = 5d hedged gross return; enter only if pred > theta (~round-trip cost)")
+
+    elif variant in ("P1", "P2"):  # same definitions as scripts/h_pairs.py (kept for the summary stats)
+        from quant.strategies import pairs
+        pbook, spreads = pairs.build_book(pairs.PAIRS)
+        grid = param_grid({"lookback": [20, 60], "z_in": [1.5, 2.0]}) if variant == "P1" else \
+            param_grid({"lookback": [60, 120], "z_in": [2.5, 3.0]})
+        return Spec("pairs", f"{variant} z-score pairs book", pbook, pairs.decision_fn_factory(pbook, spreads), grid)
+
+    elif variant == "E1":  # ensemble of the two permutation-significant relative-value edges (P1 + R2)
+        from quant.strategies import pairs, resid
+        pbook, spreads = pairs.build_book(pairs.PAIRS)
+        rbook, res = resid.build_book(daily)
+        pfn, rfn = pairs.decision_fn_factory(pbook, spreads), resid.decision_fn_factory(rbook, res)
+        book = bt.Book({**pbook.events, **rbook.events},
+                       borrow_annual={k: pbook.borrow_annual for k in pbook.events},
+                       borrow_on_abs={k: True for k in pbook.events})
+        return Spec("ensemble", "E1 P1 bank pairs + R2 residual reversal, equal capital slots", book,
+                    lambda p: {**pfn({"lookback": 60, "z_in": p["pz"]}),
+                               **rfn({"k": 20, "z_in": p["rz"], "max_hold": 20})},
+                    param_grid({"pz": [1.5, 2.0], "rz": [1.5, 2.0]}))
+
+    # ------------------------------------------------------------ K: monthly cross-sectional factors (hedged)
+    elif variant in ("K1", "K2"):
+        from quant.strategies import resid
+        from quant.strategies.pairs import adjusted_stock
+        book, res = resid.build_book(daily)
+        closes = pd.DataFrame({t: adjusted_stock(t)["close"] for t in book.events}).reindex(daily.index)
+        lr = np.log(closes).diff()
+        month_end = S.cal["rank_end"] == 1
+
+        def fn(p):
+            if variant == "K1":  # 12-1 (or 6-1) month momentum: winners keep winning (Jegadeesh-Titman)
+                score = np.log(closes.shift(21) / closes.shift(p["lookback"]))
+            else:  # low volatility anomaly: low-vol stocks earn more per unit risk
+                score = -lr.rolling(p["lookback"], min_periods=p["lookback"] // 2).std()
+            score = score.where(closes.notna())
+            rank = score.rank(axis=1, ascending=False)
+            pick = (rank <= p["n"]).astype(float).where(month_end).ffill().fillna(0.0)
+            return {t: bt.decisions_at_close(ev, pick[t].reindex(pd.DatetimeIndex(ev["date"].unique())).fillna(0.0))
+                    for t, ev in book.events.items()}
+        if variant == "K1":
+            return Spec("factor", "K1 XS momentum top-n WIG20 names, hedged, monthly", book, fn,
+                        param_grid({"lookback": [126, 252], "n": [4]}))
+        return Spec("factor", "K2 low-volatility top-n WIG20 names, hedged, monthly", book, fn,
+                    param_grid({"lookback": [60, 250], "n": [4]}))
+
     # ------------------------------------------------------------ G: FW20 vs DAX relative value
     elif variant in ("G1", "G2"):
         from quant.strategies import glob

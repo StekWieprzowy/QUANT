@@ -3,32 +3,51 @@
 Projekt badawczy: szukanie statystycznie istotnej, odpornej i opłacalnej po kosztach zależności na WIG20/FW20.
 **Tylko research i backtesty** – brak handlu na żywo i jakichkolwiek połączeń z brokerem.
 
-Plan i pre-commitment podziału danych: [`research/00_plan.md`](research/00_plan.md). Raport końcowy: [`REPORT.md`](REPORT.md).
+* Plan i pre-commitment podziału danych: [`research/00_plan.md`](research/00_plan.md)
+* **Raport końcowy:** [`REPORT.md`](REPORT.md) – wynik negatywny: żaden z wariantów nie przeszedł walidacji, holdout nieużyty
+* Rejestr wszystkich testów: [`hypotheses_log.csv`](hypotheses_log.csv)
+* Notatki z iteracji: [`research/`](research/)
 
 ## Uruchomienie od zera
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"            # albo: pip install -r requirements.txt
-python -m pytest                   # testy backtestera (look-ahead, koszty, rolowanie, holdout lock)
-python scripts/refresh_data.py     # pobiera dane EOD do data/raw (stooq / bossa / NBP)
-python scripts/check_data.py       # kontrola jakości + budowa ciągłej serii FW20 -> data/processed
+pip install -e ".[dev]"
+python -m pytest                          # testy: look-ahead, koszty, rolowanie, wyrównanie danych, holdout lock
+python scripts/refresh_gpw.py --types futures indices   # archiwum GPW od 2005 (~2-3 h, ~1 zapyt./s, przyrostowo)
+python scripts/refresh_data.py            # Yahoo (rynki zagraniczne, akcje .WA) + NBP (fixing FX)
+python scripts/fix_stock_gaps.py          # oficjalne kursy GPW dla dni z luką >10% (naprawa ticków Yahoo)
+python scripts/check_data.py              # ciągła seria FW20 -> data/processed + research/01_data_quality.md
 ```
 
-Każda iteracja researchu to skrypt `scripts/hNN_*.py`, który loguje wszystkie warianty do `hypotheses_log.csv`
-i zapisuje notatkę w `research/`. Holdout (od 2022-07-01) jest dostępny wyłącznie przez
-`scripts/run_holdout.py` i może być użyty dokładnie raz (`holdout/LOCK`).
+Research (każde uruchomienie dopisuje wiersze do `hypotheses_log.csv` – nie powtarzaj bez potrzeby):
+
+```bash
+python scripts/check_lookahead.py R2 K1   # empiryczny detektor look-ahead dla wariantów z katalogu
+python scripts/h_fw20.py R2               # walk-forward + rejestr + DSR + permutacje + bramka
+python scripts/h_pairs.py P1
+python scripts/final_stats.py             # Reality Check / BH na wszystkich wariantach (bez logowania)
+python scripts/make_figures.py E1 R2 K1   # wykresy do REPORT.md
+```
+
+Holdout (od 2022-07-01) jest dostępny wyłącznie przez `scripts/run_holdout.py`, czyta zamrożonego kandydata z
+`holdout/candidate.json` (zapisywanego tylko po przejściu pełnej bramki) i może być użyty dokładnie raz
+(`holdout/LOCK`). W tym projekcie nie został użyty.
 
 ## Struktura
 
 | Ścieżka | Zawartość |
 |---|---|
-| `src/quant/config.py` | stałe: podział research/holdout, model kosztów, seed |
-| `src/quant/data/` | pobieranie (stooq, bossa, NBP), magazyn parquet z „firewallem” holdoutu, kalendarz i rolowanie FW20 |
-| `src/quant/backtest.py` | wektorowy backtester na siatce zdarzeń open/close (wykonanie zawsze na następnym barze) |
-| `src/quant/metrics.py` | Sharpe, MDD, PSR, Deflated Sharpe, BH, White Reality Check |
+| `src/quant/config.py` | podział research/holdout, modele kosztów, seed, stopy NBP (finansowanie) |
+| `src/quant/data/` | GPW archiwum, Yahoo, NBP (+ stooq/bossa dla uruchomień lokalnych), magazyn parquet z „firewallem” holdoutu, kalendarz wygasania i rolowanie FW20 |
+| `src/quant/backtest.py` | wektorowy backtester na siatce zdarzeń open/close (wykonanie zawsze na następnym zdarzeniu), portfele wieloinstrumentowe |
+| `src/quant/metrics.py` | Sharpe, MDD, PSR, Deflated Sharpe, BH, White Reality Check (klasyczny i studentyzowany) |
 | `src/quant/validation.py` | walk-forward, purged k-fold, test permutacyjny, sąsiedztwo parametrów |
-| `src/quant/registry.py` | rejestr hipotez `hypotheses_log.csv` (budżet 200) |
-| `src/quant/holdout.py` | jednorazowa blokada holdoutu |
-| `research/` | notatki z iteracji |
-| `tests/` | testy jednostkowe |
+| `src/quant/research.py` | wspólny pipeline oceny + bramka kandydata |
+| `src/quant/lookahead.py` | detektor look-ahead (zaburzanie przyszłych danych) |
+| `src/quant/strategies/` | katalog hipotez (`catalog.py`) i implementacje rodzin |
+| `src/quant/registry.py`, `holdout.py` | rejestr hipotez (budżet 200), jednorazowa blokada holdoutu |
+| `scripts/` | pobieranie danych, testy hipotez, statystyki końcowe, wykresy, holdout |
+| `reports/` | wykresy i statystyki końcowe |
+
+Dane rynkowe (`data/`) nie są w repozytorium (regulaminy źródeł) – odtwarza je `scripts/refresh_*.py`.

@@ -154,8 +154,8 @@ class Book:
 
     events: dict[str, pd.DataFrame]
     weights: dict[str, float] | None = None
-    borrow_annual: float = 0.0
-    borrow_on_abs: bool = False
+    borrow_annual: float | dict = 0.0  # scalar or per-instrument dict
+    borrow_on_abs: bool | dict = False
 
     def w(self, name: str) -> float:
         return self.weights[name] if self.weights else 1.0 / len(self.events)
@@ -189,7 +189,11 @@ class BookResult:
 
 
 def run_book(book: Book, decisions: dict[str, np.ndarray], cost_mult: float = 1.0) -> BookResult:
-    parts = {k: run(ev, decisions[k], cost_mult, book.borrow_annual, book.borrow_on_abs)
+    def per(attr, k):
+        v = getattr(book, attr)
+        return v.get(k, 0.0 if attr == "borrow_annual" else False) if isinstance(v, dict) else v
+
+    parts = {k: run(ev, decisions[k], cost_mult, per("borrow_annual", k), per("borrow_on_abs", k))
              for k, ev in book.events.items()}
     idx = book.all_dates()
     cols = ["gross", "cost", "net", "turnover"]

@@ -36,7 +36,10 @@ def stock_hedged_events(ticker: str, fw: pd.DataFrame, beta_lb: int = 250,
     oS = S["open"].fillna(S["close"].shift(1))
     n = len(idx)
     ret = np.zeros(2 * n)
-    ret[0::2] = ((oS / S["close"].shift(1) - 1) - beta * (F["open"] / F["prev_close"] - 1)).fillna(0).to_numpy()
+    # cash financing of the long stock notional, charged on the overnight leg (futures leg embeds r - q,
+    # so without this the hedged position would book the PLN cash rate as alpha)
+    fin = config.pln_rate(idx) / 252
+    ret[0::2] = ((oS / S["close"].shift(1) - 1) - beta * (F["open"] / F["prev_close"] - 1) - fin).fillna(0).to_numpy()
     ret[1::2] = ((S["close"] / oS - 1) - beta * (F["close"] / F["open"] - 1)).fillna(0).to_numpy()
     fut_side = fut_costs.per_side_points() / F["close"]
     cost = np.empty(2 * n)
@@ -53,17 +56,19 @@ def stock_hedged_events(ticker: str, fw: pd.DataFrame, beta_lb: int = 250,
 
 
 def reversal_positions(resid: pd.Series, k: int, z_in: float, z_exit: float = 0.5, max_hold: int = 10,
-                       vol_lb: int = 60) -> pd.Series:
+                       vol_lb: int = 60, allow_entry: pd.Series | None = None) -> pd.Series:
     cum = resid.rolling(k).sum()
     sd = resid.rolling(vol_lb, min_periods=vol_lb // 2).std() * np.sqrt(k)
     z = (cum / sd).to_numpy()
+    ok = np.ones(len(z), dtype=bool) if allow_entry is None else \
+        allow_entry.reindex(resid.index).ffill().fillna(False).to_numpy(dtype=bool)
     pos = np.zeros(len(z))
     cur, held = 0.0, 0
     for i, zi in enumerate(z):
         if np.isnan(zi):
             cur, held = 0.0, 0
         elif cur == 0.0:
-            if zi < -z_in:
+            if zi < -z_in and ok[i]:
                 cur, held = 1.0, 0
         else:
             held += 1
@@ -81,9 +86,10 @@ def build_book(fw: pd.DataFrame, universe=UNIVERSE):
     return bt.Book(events), resids
 
 
-def decision_fn_factory(book: bt.Book, resids: dict[str, pd.Series]):
+def decision_fn_factory(book: bt.Book, resids: dict[str, pd.Series], allow_entry: pd.Series | None = None):
     def fn(p: dict) -> dict[str, np.ndarray]:
         return {k: bt.decisions_at_close(ev, reversal_positions(resids[k], p["k"], p["z_in"],
-                                                                  max_hold=p.get("max_hold", 10)))
+                                                                  max_hold=p.get("max_hold", 10),
+                                                                  allow_entry=allow_entry))
                 for k, ev in book.events.items()}
     return fn

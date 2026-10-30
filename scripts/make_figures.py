@@ -36,7 +36,7 @@ def main(variants: list[str]) -> None:
     curves = {v: wf_daily(v, daily, events) for v in variants}
     start = min(c.index[0] for c in curves.values())
     bh = np.expm1(np.log(daily["close"] / daily["prev_close"]).fillna(0))
-    bh = bh[bh.index >= start].rename("Buy & hold FW20")
+    bh = bh[bh.index >= start].rename("Buy & hold FW20 (no costs)")
 
     fig, ax = plt.subplots(2, 1, figsize=(9, 6), sharex=True, gridspec_kw={"height_ratios": [2, 1]})
     for i, (v, c) in enumerate(list(curves.items()) + [("BH", bh)]):
@@ -62,7 +62,8 @@ def main(variants: list[str]) -> None:
     fig.tight_layout()
     fig.savefig(config.FIG_DIR / "wf_return_hist.png", dpi=130)
 
-    reg = registry.load()
+    reg_all = registry.load()
+    reg = reg_all
     reg = reg[(reg["stage"] != "holdout") & (reg["verdict"].fillna("") != "INVALID")].reset_index(drop=True)
     fig, ax = plt.subplots(figsize=(9, 3))
     wf = reg[reg["stage"] == "wf"]
@@ -73,7 +74,8 @@ def main(variants: list[str]) -> None:
     ax.axhline(1.0, color=SERIES[3], lw=1, ls="--", label="gate SR=1")
     ax.set_xlabel("registry order")
     ax.set_ylabel("net Sharpe")
-    ax.set_title(f"All {len(reg)} logged trials", loc="left", color=INK)
+    ax.set_title(f"{len(reg)} valid of {len(reg_all[reg_all['stage'] != 'holdout'])} logged trials "
+                 "(INVALID rows hidden, still counted in N)", loc="left", color=INK)
     ax.legend(frameon=False, fontsize=8)
     fig.tight_layout()
     fig.savefig(config.FIG_DIR / "registry_sharpes.png", dpi=130)
