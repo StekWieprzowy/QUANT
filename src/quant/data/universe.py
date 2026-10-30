@@ -1,4 +1,23 @@
-"""Symbols downloaded by scripts/refresh_data.py (stooq naming)."""
+"""Symbols downloaded by scripts/refresh_data.py.
+
+stooq/bossa turned out to be unreachable from the research container (stooq resets TLS, bossa requires
+login), so the working sources are: GPW archive (PL indices, FW20 contracts, stocks), NBP API (FX fixing)
+and the Yahoo chart API (foreign markets). The stooq lists are kept for users running locally.
+"""
+
+YAHOO = {
+    "^GDAXI": "DAX", "^GSPC": "S&P 500", "ES=F": "E-mini S&P 500 front", "^VIX": "VIX",
+    "^STOXX50E": "Euro Stoxx 50", "^IXIC": "Nasdaq Comp.", "HG=F": "Copper", "BZ=F": "Brent",
+    "CL=F": "WTI", "GC=F": "Gold", "EURPLN=X": "EUR/PLN", "USDPLN=X": "USD/PLN", "EURUSD=X": "EUR/USD",
+    "^TNX": "US 10Y yield", "EEM": "iShares MSCI EM ETF", "EPOL": "iShares MSCI Poland ETF (US-listed)",
+    "^N225": "Nikkei 225",
+}
+
+# WSE stocks via Yahoo (.WA); adjclose is split+dividend adjusted. Current/long-lived WIG20 names ->
+# survivorship bias acknowledged in REPORT.md.
+YAHOO_PL_STOCKS = ["PKO", "PEO", "PZU", "KGH", "PKN", "CDR", "LPP", "DNP", "ALE", "SPL", "MBK", "KTY", "CPS",
+                   "OPL", "PGE", "JSW", "KRU", "BDX", "CCC", "PCO", "ACP", "ALR", "LTS", "TPE", "ENG", "PGN",
+                   "BHW", "ING", "MIL", "EAT", "ENA", "BNP", "ATT", "GTC", "BRS", "LWB", "CIE"]
 
 STOOQ_INDICES = {
     "wig20": "WIG20 price index",

@@ -28,7 +28,7 @@ def expiry_date(year: int, month: int, sessions: pd.DatetimeIndex) -> pd.Timesta
     """Last session on/before the 3rd Friday (handles holidays such as Good Friday)."""
     tf = third_friday(year, month)
     prior = sessions[sessions <= tf]
-    if len(prior) == 0:
+    if len(prior) == 0 or tf > sessions[-1]:
         return tf
     return prior[-1]
 
@@ -62,9 +62,10 @@ def roll_dates(sessions: pd.DatetimeIndex, schedule: pd.DataFrame, roll_days: in
     sess = pd.DatetimeIndex(sessions).sort_values()
     out = {}
     for _, r in schedule.iterrows():
+        if r["expiry"] > sess[-1]:  # expiry after the data end: approximate with business days
+            out[r["contract"]] = r["expiry"] - pd.offsets.BDay(roll_days)
+            continue
         pos = sess.searchsorted(r["expiry"])
-        if pos >= len(sess) or sess[pos] != r["expiry"]:
-            pos = min(pos, len(sess) - 1)
         out[r["contract"]] = sess[max(pos - roll_days, 0)]
     return pd.Series(out)
 

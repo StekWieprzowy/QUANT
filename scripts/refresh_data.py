@@ -1,6 +1,6 @@
 """Download / refresh all raw data into data/raw/<source>/*.parquet.
 
-Usage: python scripts/refresh_data.py [--only stooq|bossa|nbp] [--skip-existing]
+Usage: python scripts/refresh_data.py [--only yahoo|nbp|stooq|bossa] [--skip-existing]
 
 Sources are tried in order of preference and failures are logged (not fatal), so a partial network
 policy still yields whatever is reachable. Completeness of the result is checked by scripts/check_data.py.
@@ -53,6 +53,19 @@ def bossa_futures() -> list[str]:
     return []
 
 
+def yahoo_all() -> list[str]:
+    failed = []
+    for sym in list(universe.YAHOO) + [f"{t}.WA" for t in universe.YAHOO_PL_STOCKS]:
+        try:
+            df = sources.fetch_yahoo(sym)
+            store.save(df, store.raw_path("yahoo", sym))
+            log.info("yahoo %-9s %5d rows %s..%s", sym, len(df), df.index[0].date(), df.index[-1].date())
+        except Exception as e:  # noqa: BLE001
+            failed.append(sym)
+            log.warning("yahoo %s failed: %s", sym, e)
+    return failed
+
+
 def nbp_fx() -> list[str]:
     failed = []
     for code in ["eur", "usd", "chf"]:
@@ -67,16 +80,20 @@ def nbp_fx() -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", choices=["stooq", "bossa", "nbp"])
+    ap.add_argument("--only", choices=["yahoo", "nbp", "stooq", "bossa"])
     ap.add_argument("--skip-existing", action="store_true")
     a = ap.parse_args()
     failed = []
-    if a.only in (None, "stooq"):
-        failed += stooq_all(a.skip_existing)
-    if a.only in (None, "bossa"):
-        failed += bossa_futures()
+    # GPW archive (FW20, WIG20, stocks) is handled by scripts/refresh_gpw.py
+    if a.only in (None, "yahoo"):
+        failed += yahoo_all()
     if a.only in (None, "nbp"):
         failed += nbp_fx()
+    # stooq / bossa are unreachable from the cloud container; opt-in only when running locally
+    if a.only == "stooq":
+        failed += stooq_all(a.skip_existing)
+    if a.only == "bossa":
+        failed += bossa_futures()
     log.info("done; %d failures: %s", len(failed), failed[:30])
     return 0
 

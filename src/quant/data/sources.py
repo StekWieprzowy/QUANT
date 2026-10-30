@@ -93,6 +93,31 @@ def fetch_bossa_zip(url: str, name_filter: str | None = None) -> dict[str, pd.Da
     return out
 
 
+# ---------------------------------------------------------------- Yahoo chart API (foreign markets)
+def parse_yahoo_chart(js: dict) -> pd.DataFrame:
+    res = js["chart"]["result"][0]
+    tz = res["meta"].get("exchangeTimezoneName", "UTC")
+    ts = pd.to_datetime(res["timestamp"], unit="s", utc=True).tz_convert(tz)
+    q = res["indicators"]["quote"][0]
+    df = pd.DataFrame({k: q.get(k) for k in ["open", "high", "low", "close", "volume"]},
+                      index=pd.DatetimeIndex(ts.date, name="date"))
+    if "adjclose" in res["indicators"]:
+        df["adjclose"] = res["indicators"]["adjclose"][0]["adjclose"]
+    df = df.astype(float)
+    df = df[~df.index.duplicated(keep="last")].dropna(subset=["close"])
+    return df.sort_index()
+
+
+def fetch_yahoo(symbol: str) -> pd.DataFrame:
+    import json
+    from urllib.parse import quote
+
+    now = int(time.time())
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}"
+           f"?period1=0&period2={now}&interval=1d&events=div%2Csplits&includeAdjustedClose=true")
+    return parse_yahoo_chart(json.loads(http_get(url)))
+
+
 # ---------------------------------------------------------------- NBP (official FX fixing ~11:45 CET)
 def fetch_nbp_fx(code: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     frames = []
