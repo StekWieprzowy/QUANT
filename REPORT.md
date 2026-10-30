@@ -79,7 +79,9 @@ Kontrola jakości (`scripts/check_data.py`, [`research/01_data_quality.md`](rese
 | H128 | E1 portfel P1 + R2 | dywersyfikacja słabych przewag | 0.46 | 1.42 | 9.5% | 758 | 0.003 |
 
 Benchmark buy & hold FW20 (netto z rolowaniem) 2008-01 – 2022-06: **SR −0.10, MDD 64%, CAGR −5.3%**.
-<!-- WIG20_BENCHMARK -->
+Buy & hold indeksu WIG20 (GPW, bez kosztów) 2008-01 – 2022-06: **SR −0.09, CAGR −4.8%, MDD 62%**; WIG20TR
+(z dywidendami): SR 0.06, CAGR −1.4%, MDD 60% (`reports/benchmark_wig20.json`). Sesje WIG20 i FW20 w okresie
+research pokrywają się w 100%.
 
 Odrzucone/nieważne wiersze (INVALID, wciąż liczone do N): H005 (błąd stitchingu WF), H045–H049 (look-ahead w L2),
 H072–H076 (błędne ticki Yahoo), H077–H086 i H097–H110 (R1, R2, R3, X2, K1, K2 bez kosztu finansowania długiej nogi – patrz §5; R1, R2, K1 powtórzone jako H115/H120/H123).

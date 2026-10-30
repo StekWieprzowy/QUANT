@@ -30,7 +30,7 @@ def main() -> None:
     if "wig20" in out:
         w = out["wig20"]
         miss_f = w.index.difference(sess)
-        miss_w = sess.difference(w.index)
+        miss_w = sess[sess <= w.index.max()].difference(w.index)  # indices are downloaded for research only
         lines += [f"Sesje WIG20 bez FW20: {len(miss_f)} {list(map(str, miss_f.date[:10]))}",
                   f"Sesje FW20 bez WIG20: {len(miss_w)} {list(map(str, miss_w.date[:10]))}", ""]
     weekday_gaps = [d for d in pd.bdate_range(sess[0], sess[-1]) if d not in sess]
