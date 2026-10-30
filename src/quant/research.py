@@ -26,8 +26,25 @@ GATE = {  # pre-committed in research/00_plan.md section 5
 
 
 # ------------------------------------------------------------------ data
+_FULL_ACCESS = False  # flipped only by unlock_holdout() (one-shot, lock-file protected)
+
+
+def unlock_holdout(spec: dict) -> str:
+    """Claim the one-time holdout (writes holdout/LOCK, raises if already used) and enable full data."""
+    global _FULL_ACCESS
+    from quant import holdout
+
+    h = holdout.claim_holdout(spec)
+    _FULL_ACCESS = True
+    return h
+
+
 def fw20_daily(start: pd.Timestamp = config.RESEARCH_START) -> pd.DataFrame:
-    d = store.load_processed_research("fw20_cont", start)
+    if _FULL_ACCESS:
+        d = store.load_processed_full("fw20_cont")
+        d = d[d.index >= start]
+    else:
+        d = store.load_processed_research("fw20_cont", start)
     d = d[~d["missing"].astype(bool)]
     return d
 
@@ -61,11 +78,11 @@ def align_foreign(foreign: pd.DataFrame, sessions: pd.DatetimeIndex, col: str = 
 
 
 def load_yahoo(sym: str) -> pd.DataFrame:
-    return store.load_research("yahoo", sym)
+    return store.load_full("yahoo", sym) if _FULL_ACCESS else store.load_research("yahoo", sym)
 
 
 def load_nbp(code: str) -> pd.DataFrame:
-    return store.load_research("nbp", code)
+    return store.load_full("nbp", code) if _FULL_ACCESS else store.load_research("nbp", code)
 
 
 # ------------------------------------------------------------------ evaluation
