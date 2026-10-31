@@ -179,6 +179,74 @@ def build(variant: str, daily: pd.DataFrame, events: pd.DataFrame) -> Spec:
                                **rfn({"k": 20, "z_in": p["rz"], "max_hold": 20})},
                     param_grid({"pz": [1.5, 2.0], "rz": [1.5, 2.0]}))
 
+    # ------------------------------------------------------------ CA: phase 2 part 1 - cost attack (same signal)
+    elif variant in ("CA1", "CA2", "CA3", "CA6"):
+        from quant.strategies import costattack as ca
+        from quant.strategies import resid
+        book, res = resid.build_book(daily)
+        tick = list(book.events)
+        liq = ca.liquid_masks(tick, 8) if variant in ("CA3", "CA6") else {t: None for t in tick}
+        every = {"CA1": 1, "CA6": 2}.get(variant)
+        days = {t: (ca.week_end_mask(res[t].index, every) if every else None) for t in tick}
+
+        def fn(p):
+            out = {}
+            for t, ev in book.events.items():
+                z = ca.resid_z(res[t], p["k"])
+                pos = ca.positions(z, p["z_in"], p.get("z_exit", 0.5), p.get("max_hold", 20),
+                                   entry_ok=liq[t], trade_days=days[t])
+                out[t] = bt.decisions_at_close(ev, pos)
+            return out
+        spec = {
+            "CA1": ("CA1 R weekly rebalance (entries/exits only on week-end)",
+                    {"k": [10, 20], "z_in": [1.5, 2.0], "z_exit": [0.5], "max_hold": [20]}),
+            "CA2": ("CA2 R hysteresis: exit only after full reversion/overshoot",
+                    {"k": [10, 20], "z_in": [2.0], "z_exit": [0.0, -0.5], "max_hold": [40]}),
+            "CA3": ("CA3 R liquid top-8 by trailing turnover",
+                    {"k": [10, 20], "z_in": [1.5, 2.0], "z_exit": [0.5], "max_hold": [20]}),
+            "CA6": ("CA6 R liquid top-8 + biweekly + hysteresis",
+                    {"k": [10, 20], "z_in": [1.5, 2.0], "z_exit": [0.0], "max_hold": [40]}),
+        }[variant]
+        return Spec("costattack", spec[0], book, fn, param_grid(spec[1]),
+                    notes="phase2 part1; stocks 0.39%/side + financing; same residual signal as R2")
+    elif variant == "CA4":  # single-stock futures instead of shares (no borrow, no financing)
+        from quant.strategies import costattack as ca
+        evs, res, trad = {}, {}, {}
+        for t, root in ca.SSF.items():
+            evs[t], res[t], trad[t] = ca.ssf_hedged_events(root, daily, cost_per_side=0.0025)
+        book = bt.Book(evs)
+
+        def fn(p):
+            return {t: bt.decisions_at_close(ev, ca.positions(
+                ca.resid_z(res[t], p["k"]), p["z_in"], 0.5, 20, entry_ok=trad[t], trade_days=trad[t]))
+                for t, ev in book.events.items()}
+        return Spec("costattack", "CA4 R via GPW single-stock futures (0.25%/side assumed) + FW20 hedge", book, fn,
+                    param_grid({"k": [10, 20], "z_in": [1.5, 2.0]}),
+                    notes="9 SSF roots; cost scenario 0.10% comm + 0.15% slippage (thin books, unverified)")
+    elif variant == "CA7":  # pairs restricted to the three most liquid WIG20 financials (tightest spreads)
+        from quant.strategies import pairs
+        pbook, spreads = pairs.build_book([("PKO", "PEO"), ("PKO", "PZU"), ("PEO", "PZU")])
+        return Spec("costattack", "CA7 pairs, only most liquid names (PKO/PEO/PZU)", pbook,
+                    pairs.decision_fn_factory(pbook, spreads), param_grid({"lookback": [20, 60], "z_in": [1.5, 2.0]}),
+                    notes="same signal as P1; liquidity lever")
+    elif variant == "CA5":  # pairs (L/S shares) with weekly rebalancing + hysteresis
+        from quant.strategies import costattack as ca
+        from quant.strategies import pairs
+        pbook, spreads = pairs.build_book(pairs.PAIRS)
+
+        def fn(p):
+            out = {}
+            for k, ev in pbook.events.items():
+                sp = spreads[k]
+                z = (sp - sp.rolling(p["lookback"]).mean()) / sp.rolling(p["lookback"]).std()
+                # pairs: long spread when z < -z_in, short when z > z_in (positions() uses -z convention)
+                pos = ca.positions(z, p["z_in"], 0.0, p["lookback"], trade_days=ca.week_end_mask(sp.index, 1),
+                                   side="both")
+                out[k] = bt.decisions_at_close(ev, pos)
+            return out
+        return Spec("costattack", "CA5 pairs weekly + exit at full reversion", pbook, fn,
+                    param_grid({"lookback": [60, 120], "z_in": [1.5, 2.0]}))
+
     # ------------------------------------------------------------ K: monthly cross-sectional factors (hedged)
     elif variant in ("K1", "K2"):
         from quant.strategies import resid

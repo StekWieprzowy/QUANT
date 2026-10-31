@@ -22,7 +22,8 @@ TRADING_DAYS = 252
 RESEARCH_START = pd.Timestamp("2005-01-01")
 HOLDOUT_START = pd.Timestamp("2022-07-01")
 
-HYPOTHESIS_BUDGET = 200
+# phase 1: 200 (128 used); phase 2 (user instruction 2026-10-31): +40 cost attack, +60 events -> 228
+HYPOTHESIS_BUDGET = 228
 
 
 @dataclass(frozen=True)
