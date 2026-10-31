@@ -67,6 +67,38 @@ def wig20_portfolios() -> None:
     print("wig20 portfolios", df["revision"].nunique(), "revisions", len(df), "rows")
 
 
+def index_change_quotes() -> None:
+    """Official GPW stock quotes (type 10) for +-15 sessions around every WIG20 revision (research period)
+    that changed the composition -> no survivorship bias for added/removed names."""
+    from quant.data import gpw, store
+
+    port = pd.read_csv(OUT / "wig20_portfolios.csv", parse_dates=["revision"])
+    revs = sorted(port["revision"].unique())
+    changed = [r for a, r in zip(revs[:-1], revs[1:])
+               if set(port.loc[port.revision == a, "isin"]) != set(port.loc[port.revision == r, "isin"])
+               and r < config.HOLDOUT_START]
+    sess = pd.DatetimeIndex(store.load_processed_research("fw20_cont").index)
+    days = set()
+    for r in changed:
+        p = sess.searchsorted(r)
+        days |= set(sess[max(p - 15, 0): p + 16])
+    cache = OUT / "gpw_t10"
+    cache.mkdir(parents=True, exist_ok=True)
+    s = requests.Session()
+    s.headers.update(UA)
+    for d in sorted(days):
+        f = cache / f"{d:%Y-%m-%d}.parquet"
+        if f.exists():
+            continue
+        df = gpw.fetch_day(s, 10, d)
+        time.sleep(gpw.DELAY_S)
+        if len(df):
+            for c in ("isin", "currency", "name"):
+                df[c] = df[c].astype(str)
+            df.to_parquet(f)
+    print("index changes", len(changed), "revisions;", len(days), "sessions")
+
+
 def dividends() -> None:
     rows = []
     for t in universe.YAHOO_PL_STOCKS:

@@ -7,6 +7,7 @@ Projekt badawczy: szukanie statystycznie istotnej, odpornej i opłacalnej po kos
 * **Raport końcowy:** [`REPORT.md`](REPORT.md) – wynik negatywny: żaden z wariantów nie przeszedł walidacji, holdout nieużyty
 * Rejestr wszystkich testów: [`hypotheses_log.csv`](hypotheses_log.csv)
 * Notatki z iteracji: [`research/`](research/)
+* Faza 2: [`DISCRETIONARY_PLAYBOOK.md`](DISCRETIONARY_PLAYBOOK.md) (ściąga eventów) i [`THEORIES.md`](THEORIES.md) (teorie do ręcznej weryfikacji)
 
 ## Uruchomienie od zera
 
@@ -30,6 +31,18 @@ python scripts/final_stats.py             # Reality Check / BH na wszystkich war
 python scripts/make_figures.py E1 R2 K1   # wykresy do REPORT.md
 ```
 
+Faza 2 (koszty, stabilność, eventy):
+
+```bash
+python scripts/h_fw20.py CA1 CA2 CA3 CA4 CA5 CA6 CA7   # atak na koszty (loguje do rejestru)
+python scripts/phase2_costs.py            # próg kosztów (walk-forward przy skalowanych kosztach) + zwroty OOS
+python scripts/phase2_stability.py        # podokresy, rolling Sharpe 2y
+python scripts/fetch_events.py            # stopy NBP, dywidendy, portfele WIG20, surowce
+python scripts/fetch_events.py index_change_quotes   # kursy GPW wokół zmian składu WIG20 (~600 zapytań)
+python scripts/phase3_events.py --dry     # event studies bez logowania (kontrola błędów)
+python scripts/phase3_events.py           # event studies -> rejestr + reports/phase3/event_summary.csv (BH)
+```
+
 Holdout (od 2022-07-01) jest dostępny wyłącznie przez `scripts/run_holdout.py`, czyta zamrożonego kandydata z
 `holdout/candidate.json` (zapisywanego tylko po przejściu pełnej bramki) i może być użyty dokładnie raz
 (`holdout/LOCK`). W tym projekcie nie został użyty.
@@ -46,7 +59,8 @@ Holdout (od 2022-07-01) jest dostępny wyłącznie przez `scripts/run_holdout.py
 | `src/quant/research.py` | wspólny pipeline oceny + bramka kandydata |
 | `src/quant/lookahead.py` | detektor look-ahead (zaburzanie przyszłych danych) |
 | `src/quant/strategies/` | katalog hipotez (`catalog.py`) i implementacje rodzin |
-| `src/quant/registry.py`, `holdout.py` | rejestr hipotez (budżet 200), jednorazowa blokada holdoutu |
+| `src/quant/registry.py`, `holdout.py` | rejestr hipotez (budżet 228 po fazie 2), jednorazowa blokada holdoutu |
+| `src/quant/events.py`, `liquidity.py` | event studies (CAR, bootstrap CI, BH), estymatory płynności |
 | `scripts/` | pobieranie danych, testy hipotez, statystyki końcowe, wykresy, holdout |
 | `reports/` | wykresy i statystyki końcowe |
 

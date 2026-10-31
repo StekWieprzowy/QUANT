@@ -8,6 +8,11 @@ kandydata (`scripts/run_holdout.py`, blokada `holdout/LOCK`).
 
 Badanie zatrzymałem na **128 wpisach w rejestrze** (z budżetu 200) – uzasadnienie w sekcji 7.
 
+**Faza 2 (sekcje 10–13):** atak na koszty mean-reversion (35 wariantów) nie dał kandydata – dźwignie kosztowe
+niszczą przewagę brutto; próg opłacalności to ~0.12–0.17%/stronę, a przewaga zanika od 2018 r. także brutto.
+Event studies (31 hipotez): potwierdzone tylko efekt podatkowy dywidendy i reakcja KGHM na miedź (mała, słabnąca).
+Holdout nadal nietknięty. Rejestr: 194 wpisy.
+
 ---
 
 ## 1. Dane
@@ -162,3 +167,109 @@ parametrów.
 3. Historyczny skład WIG20 (eliminacja survivorship bias).
 4. Każdy nowy kandydat: dopisać do `catalog.py`, uruchomić `check_lookahead.py`, `h_fw20.py` (rejestr), a dopiero
    po przejściu bramki zapisać `holdout/candidate.json` i jednorazowo `run_holdout.py`.
+
+---
+
+# FAZA 2 (2026-10-31): koszty, stabilność, eventy
+
+Zasady bez zmian (holdout nietknięty, ten sam rejestr, DSR liczony od łącznej liczby testów). Budżet rejestru
+podniesiony do 228 (128 + 40 na część 1 + 60 na część 3) zgodnie z poleceniem.
+
+## 10. Część 1 – atak na koszty relatywnej mean-reversion (H129–H163, 35/40 wariantów)
+
+Ten sam sygnał (rezydualne odwrócenie spółki vs FW20, pary), zmieniane tylko *kiedy* i *czym* handlujemy.
+Szczegóły: [`research/06_cost_attack.md`](research/06_cost_attack.md).
+
+| ID | dźwignia | SR netto | SR brutto | trans. | MDD |
+|---|---|---|---|---|---|
+| (H120) | R2 – punkt odniesienia | 0.45 | 0.74 | 172 | 5.5% |
+| H133 | CA1 rebalancing tygodniowy | −0.10 | 0.14 | 130 | 9.5% |
+| H138 | CA2 histereza (wyjście dopiero po pełnym powrocie) | 0.31 | 0.53 | 161 | 8.9% |
+| H143 | CA3 tylko top-8 najpłynniejszych (kauzalny ranking obrotu) | 0.07 | 0.32 | 89 | 4.0% |
+| H148 | CA4 kontrakty na akcje GPW (0.25%/stronę) zamiast akcji | −0.13 | 0.27 | 174 | 11.2% |
+| H153 | CA5 pary tygodniowo + wyjście przy pełnym powrocie | 0.28 | 0.85 | 306 | 14.6% |
+| H158 | CA6 top-8 + co 2 tygodnie + histereza | −0.10 | 0.03 | 37 | 5.0% |
+| H163 | CA7 pary tylko PKO/PEO/PZU | −0.16 | 0.67 | 248 | 45.4% |
+
+**Dźwignie kosztowe niszczą przewagę brutto szybciej, niż oszczędzają koszty.** Przewaga wygasa w ciągu dni
+(rebalancing tygodniowy obcina brutto SR 0.74 → 0.14) i siedzi w mniej płynnych nazwach (top-8: brutto 0.32,
+PKO/PEO/PZU: 0.67 vs 1.3–2.0 dla pełnego koszyka par). To spójne z interpretacją odwrócenia jako premii za
+dostarczanie płynności – płaci tam, gdzie płynność jest droga. Kontrakty na akcje GPW są cienkie
+(FKGH/FCDR ~0.9 mln PLN/dzień, FPKO/FPEO ~0.16 mln, FPGE/FTPE ~10–20 tys., do 18% dni bez transakcji).
+Hedge betą FW20 (rodzina R) vs pełne L/S na akcjach (P): P ma wyższe brutto, ale płaci dwie nogi akcyjne
+i pożyczkę – po kosztach oba ≈ 0.3–0.45.
+
+### Próg kosztów
+![cost threshold](reports/figures/cost_threshold.png)
+
+Pełny walk-forward (parametry wybierane ponownie) przy przeskalowanych kosztach (`scripts/phase2_costs.py`):
+
+| koszt akcji / stronę / nogę | P1 pary | E1 portfel | R1 | R2 |
+|---|---|---|---|---|
+| 0.00% | 1.99 | 1.46 | 1.31 | 0.46 |
+| 0.12% | 1.07 | 1.06 | 0.62 | 0.65 |
+| 0.18% | 0.79 | 0.99 | 0.43 | 0.61 |
+| 0.39% (baza) | 0.31 | 0.46 | 0.16 | 0.45 |
+
+**Próg: SR OOS = 1.0 przy ~0.12%/stronę (pary P1) i ~0.17% (portfel E1)** – czyli ~⅓ kosztów bazowych.
+Nawet wtedy DSR (próg SR₀ ≈ 1.4–1.7 przy obecnej liczbie testów) nie przechodzi, a część 2 pokazuje, że
+przewaga zanika. Koszt ~0.1% all-in jest dziś osiągalny (broker z zerową prowizją do limitu obrotu + poślizg),
+ale wybór modelu kosztów po obejrzeniu wyników byłby oszustwem – opisane w THEORIES.md jako teoria do weryfikacji.
+
+## 11. Część 2 – stabilność w czasie
+
+![rolling sharpe](reports/figures/rolling_sharpe_2y.png)
+
+| wariant | 2008–2012 | 2013–2017 | 2018–2022H1 | brutto 2008–12 → 2013–17 → 2018–22 | werdykt |
+|---|---|---|---|---|---|
+| R2 | 0.73 | 1.05 | 0.00 | 0.96 → 1.47 → 0.27 | zanika – odrzucony |
+| E1 | 0.51 | 1.02 | 0.05 | 1.38 → 2.33 → 0.86 | zanika – odrzucony |
+| P1 | 0.20 | 0.71 | 0.07 | 1.14 → 1.98 → 0.99 | zanika – odrzucony |
+| CA2 | 0.60 | 0.80 | −0.21 | – | zanika – odrzucony |
+| CA5 | 0.33 | 0.55 | 0.02 | – | zanika – odrzucony |
+| R1 | −0.03 | 0.87 | −0.19 | – | odrzucony |
+| CA7 | 0.19 | −0.37 | −0.27 | – | odrzucony |
+| K1 (momentum) | 0.27 | 1.02 | 0.38 | 0.47 → 1.30 → 0.59 | stabilny, ale nieistotny (perm. p=0.18) |
+
+Wszystkie warianty relative value mają szczyt w 2016–2017 i rolling 2-letni Sharpe < 0 w 2019–2021.
+**Zanika przewaga brutto przy stałym obrocie** – to zmiana rynku, nie kosztów. Rodzina zamknięta dla
+automatycznego tradingu. Szczegóły: [`research/07_stability.md`](research/07_stability.md).
+
+## 12. Część 3 – event studies i nietypowe źródła (H164–H194, 31/60 hipotez)
+
+Pre-specyfikowane w `scripts/phase3_events.py`; N, 95% CI (bootstrap), p (t-test), korekta BH i Bonferroni po
+wszystkich 31. Szczegóły i studia przypadków: [`research/08_events.md`](research/08_events.md),
+tabele: `reports/phase3/`.
+
+**(1) Potwierdzone statystycznie (przeżywają BH i Bonferroniego):**
+
+| ID | zależność | N | efekt | 95% CI | uwagi |
+|---|---|---|---|---|---|
+| H170/H173 | Kurs w dniu odcięcia dywidendy spada o ~79% dywidendy (AR total return +0.77%) | 237 | +0.77% | [+0.49, +1.04] | = 19% podatek; stabilne w 3 podokresach; nie arbitraż po podatku |
+| H183 | Sesja KGHM (open→close) podąża za ruchem miedzi z poprzedniego dnia | 4219 | nachylenie 0.084 | [0.045, 0.122] | placebo PKN/PKO = 0; **słabnie** (2018–22 nieistotne) |
+
+**(2) Obiecujące, ale słabe dowody (p < 0.10 bez korekty, nie przeżywają BH):** KGH po dużym ruchu miedzi
+(|Δ| > 2σ) +0.34% vs WIG20 w sesji (N=235, p=0.017 – poniżej kosztu round-trip); dryf po szoku wolumenu w sezonie
+wyników (+0.79% w 10 dni, N=324, p=0.06); dodanie do WIG20: +2.1% przed i −2.5% po rewizji (N=27, p=0.07/0.04);
+CD Projekt po premierze −10.5% (N=5, wszystkie ujemne).
+
+**Brak efektu:** decyzje RPP (FW20 i banki), wybory (SP vs prywatne), wyroki CHF (N=5; szok SNB 2015 był
+ważniejszy niż orzeczenia), wygasanie FW20 (średnia), szoki EUR/PLN, crack spread → Orlen, powolna dyfuzja
+miedzi w KGHM (20 dni), run-up przed dywidendą, usunięcia z WIG20.
+
+**(3) Tylko teoria (brak danych w środowisku):** krótkie pozycje KNF, transakcje insiderów (MAR/ESPI),
+przepływy funduszy (IZFA), OFE/PPK, rekomendacje, sentyment/Google Trends, typy komunikatów ESPI, zaskoczenia
+CPI/PKB, rentowności obligacji – opisane z konkretnymi krokami weryfikacji w [`THEORIES.md`](THEORIES.md).
+Praktyczna ściąga: [`DISCRETIONARY_PLAYBOOK.md`](DISCRETIONARY_PLAYBOOK.md).
+
+## 13. Podsumowanie fazy 2
+
+* **Realne:** (a) relatywna mean-reversion spółek WIG20 brutto (permutacje p=0.003) – ale wymaga kosztów
+  ≤ ~0.12–0.17%/stronę i **zanika od 2018 r. także brutto**; (b) efekt podatkowy dnia dywidendy (stabilny,
+  ale nie do zarobienia po podatku); (c) KGHM nie dyskontuje w pełni nocnego ruchu miedzi na otwarciu
+  (mały, słabnący).
+* **Obiecujące (wymaga lepszych danych):** pary przy kosztach brokera bez prowizji (teoria #1 w THEORIES.md),
+  dodania do WIG20 (run-up/odwrócenie), PEAD na prawdziwych datach raportów, krótkie pozycje KNF, zakupy insiderów.
+* **Zamknąć:** wszystko, co próbuje przewidzieć kierunek FW20 z danych dziennych (kalendarz, trend, lead-lag,
+  FX, RPP, wygasanie, ML) – zero sygnału w ~100 testach; dźwignie kosztowe dla mean-reversion (niszczą sygnał).
+* Kandydata do holdoutu nadal brak – **holdout nietknięty**. Rejestr: 194 wpisy (budżet 228).
