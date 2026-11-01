@@ -23,7 +23,8 @@ RESEARCH_START = pd.Timestamp("2005-01-01")
 HOLDOUT_START = pd.Timestamp("2022-07-01")
 
 # phase 1: 200 (128 used); phase 2 (user instruction 2026-10-31): +40 cost attack, +60 events -> 228
-HYPOTHESIS_BUDGET = 228
+# phase 3 (2026-11-01): +40 (index changes <=15, multi-signal portfolio <=25) -> 234
+HYPOTHESIS_BUDGET = 234
 
 
 @dataclass(frozen=True)
