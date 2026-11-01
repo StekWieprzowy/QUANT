@@ -43,6 +43,16 @@ python scripts/phase3_events.py --dry     # event studies bez logowania (kontrol
 python scripts/phase3_events.py           # event studies -> rejestr + reports/phase3/event_summary.csv (BH)
 ```
 
+Faza 3 (pre-rejestracja: `research/09_phase3_preregistration.md`):
+
+```bash
+python scripts/refresh_gpw.py --types stocks --start 2009-01 --end 2022-06   # pełne archiwum akcji GPW (~1.5 h)
+python scripts/fetch_events.py index_calendar mwig40_portfolios swig80_portfolios
+python -c "from quant.data import stocks; stocks.build_panel()"
+python scripts/phase4_index.py            # część A: zmiany składu indeksów (loguje 12 wpisów)
+python scripts/phase4_portfolio.py        # część B: portfele jedno- i wielosygnałowe (loguje)
+```
+
 Holdout (od 2022-07-01) jest dostępny wyłącznie przez `scripts/run_holdout.py`, czyta zamrożonego kandydata z
 `holdout/candidate.json` (zapisywanego tylko po przejściu pełnej bramki) i może być użyty dokładnie raz
 (`holdout/LOCK`). W tym projekcie nie został użyty.

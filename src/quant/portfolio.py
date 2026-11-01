@@ -152,3 +152,33 @@ def build_weights(score: pd.Series, shortable: pd.Series, cap: float = 0.05, lon
         if w[free].abs().sum() > 0:
             w[free] = w[free] / w[free].abs().sum() * rest
     return w
+
+
+def build_weights_np(score: np.ndarray, shortable: np.ndarray, cap: float = 0.05, long_only: bool = False) -> np.ndarray:
+    """numpy version of build_weights (identical logic; NaN score = not held)."""
+    w = np.zeros(len(score))
+    ok = np.isfinite(score)
+    if not ok.any():
+        return w
+    s = score[ok].astype(float)
+    if long_only:
+        keep = s >= np.quantile(s, 2 / 3)
+        s = np.where(keep, s - s[keep].min() + 1e-6, 0.0)
+    else:
+        s = s - s.mean()
+        s = np.where((s > 0) | shortable[ok], s, 0.0)
+    tot = np.abs(s).sum()
+    if tot <= 0:
+        return w
+    x = s / tot
+    for _ in range(20):
+        over = np.abs(x) > cap
+        if not over.any():
+            break
+        x[over] = np.sign(x[over]) * cap
+        free = ~over
+        rest = 1.0 - np.abs(x[over]).sum()
+        if np.abs(x[free]).sum() > 0:
+            x[free] = x[free] / np.abs(x[free]).sum() * rest
+    w[ok] = x
+    return w

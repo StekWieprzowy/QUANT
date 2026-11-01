@@ -44,6 +44,14 @@ Skala pewności: ★★★ potwierdzone (przeżywa korektę na wielokrotne testo
   z indeksu nie mają powtarzalnej reakcji (N=27, wszystko nieistotne). Po korekcie na liczbę testów –
   tylko wskazówka. Daty rewizji i lista zmian: gpwbenchmark.pl (ogłaszane ~2 tygodnie wcześniej).
 
+### Aktualizacja (faza 3, z datami ogłoszeń GPW Benchmark 2012–2022, oficjalne kursy GPW)
+* Na próbie z prawdziwymi datami ogłoszeń zmian (WIG20 N=20) run-up między ogłoszeniem a rewizją +1.7% i oddanie
+  −1.6% po rewizji – ten sam kierunek, ale **nieistotny** (p ≈ 0.3) i ~0 netto po kosztach. mWIG40: dodania +2.6%
+  przed rewizją (N=97, p=0.048), usunięcia −3.4% (N=91, p=0.009) – żadne nie przeżywa korekty BH (H195–H206).
+* **Uwaga praktyczna:** spadek spółek usuwanych z mWIG40 dotyczy prawie wyłącznie spółek niepłynnych w kryzysie
+  (ADV < 0.5 mln PLN: −4.5% i odbicie +2.5% po rewizji; płynne: −1.6%, nieistotne). Usunięcie z indeksu to tu skutek
+  problemów spółki, nie samodzielny sygnał – nie graj go mechanicznie.
+
 ## ★★ 4. Dryf po wynikach (proxy) – reakcja na szok w sezonie raportów kontynuuje się
 * **Co:** pierwszy dzień w sezonie raportów z wolumenem > 3× normy i ruchem > 2σ (proxy publikacji wyników):
   w kolejnych 10 sesjach kurs dryfuje dalej w kierunku dnia 0 o średnio **+0.79%** (N=324, CI [−0.03%, +1.65%],
@@ -73,6 +81,12 @@ Skala pewności: ★★★ potwierdzone (przeżywa korektę na wielokrotne testo
 | Crack spread → Orlen (20 dni) | IC 0.07, nieistotne | H185 |
 | Run-up przed dywidendą, odbicie po | brak | H171–172 |
 | Kalendarz (koniec miesiąca, przed świętami), trend, mean-reversion FW20, sesja USA → FW20 | brak (faza 1) | H012–H071 |
+
+## Wnioski z fazy 3 (portfel czynnikowy)
+* **Momentum przekrojowe (12–1 mies.) w WIG20 + mWIG40** to najmocniejszy pojedynczy sygnał (SR brutto 1.18,
+  stabilny także 2018–22), ale przy obrocie ~9×/rok i kosztach mWIG40 netto zostaje ~0.3. Dla tradera ręcznego:
+  jako *filtr* (preferuj spółki z silnym 12-mies. trendem względnym, unikaj najsłabszych), nie jako częsta rotacja.
+* Niska zmienność (LVOL) – podobnie: przewaga brutto, nie netto.
 
 ## Zasady ogólne z całego projektu
 1. **Kierunku FW20 nie da się przewidzieć z danych dziennych** – informacja z USA/DAX jest w cenie otwarcia.

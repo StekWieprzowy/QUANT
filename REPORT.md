@@ -13,6 +13,11 @@ niszczą przewagę brutto; próg opłacalności to ~0.12–0.17%/stronę, a prze
 Event studies (31 hipotez): potwierdzone tylko efekt podatkowy dywidendy i reakcja KGHM na miedź (mała, słabnąca).
 Holdout nadal nietknięty. Rejestr: 194 wpisy.
 
+**Faza 3 (sekcje 14–16):** zmiany składu indeksów – nic nie przeżywa BH, efekt skupiony w spółkach niehandlowalnych.
+Portfel wielu słabych sygnałów (WIG20+mWIG40, bez survivorship bias): łączenie podnosi Sharpe **brutto** do 1.35–1.43
+(vs 1.18 najlepszy pojedynczy), ale koszty zależne od płynności zjadają przewagę – najlepszy netto 0.31. Holdout nadal
+nietknięty. Rejestr: 224 wpisy.
+
 ---
 
 ## 1. Dane
@@ -300,3 +305,48 @@ przed rewizją) jest skupiony w spółkach niehandlowalnych w kryzysie (ADV < 0.
 handlowalne: −1.6%, p=0.44) – usunięcie z indeksu jest skutkiem załamania spółki, nie przyczyną spadku. Po kosztach
 zależnych od płynności żadne okno nie jest opłacalne. Zgodnie z pre-rejestracją sygnał IDX **nie wchodzi** do
 części B. Szczegóły i weryfikacja ręczna: [`research/10_index_changes.md`](research/10_index_changes.md).
+
+## 15. Część B – portfel wielu słabych sygnałów (H207–H224, 18/25 wpisów)
+
+Uniwersum WIG20 + mWIG40 wg historycznego składu (oficjalne kursy GPW), sygnały REV / MOM / PEAD / LVOL / VAL
+(z-score przekrojowy), wagi z góry (równe, odwrotność zmienności) + jeden wariant z wagami ridge walk-forward,
+hedge bety FW20, rebalancing tygodniowy, no-trade band, limit 5% na spółkę, koszty z pre-rejestracji.
+
+![portfolios](reports/figures/phase4_portfolios.png)
+
+| portfel | SR brutto | SR netto | obrót/rok | koszty %/rok | MDD netto | perm. p |
+|---|---|---|---|---|---|---|
+| najlepszy pojedynczy: S-MOM | 1.18 | 0.27 | 8.6× | 9.9 | 31% | 0.005 |
+| S-LVOL / S-REV / S-PEAD / S-VAL | 0.85 / 0.39 / −0.21 / 0.14 | −0.24 / −3.96 / −2.73 / −0.63 | 6–67× | – | – | 0.005 / 0.005 / 0.32 / 0.76 |
+| **B-EW (główny, równe wagi)** | 1.23 | −2.01 | 36× | 32.6 | 92% | 0.005 |
+| B-IV (odwrotność zmienności) | 1.35 | −1.61 | 30× | 28.1 | 86% | 0.005 |
+| B-WF (wagi estymowane walk-forward) | **1.43** | −1.30 | 30× | 27.1 | 81% | 0.005 |
+| B-LO (long-only + FW20) | 1.04 | −2.43 | 43× | – | 98% | – |
+| B-SLOW (post-hoc: bez REV, miesięcznie, band 1%) | 1.16 | **0.31** | 5.3× | 8.0 | 26% | 0.005 |
+
+* Korelacje: sygnały prawie nieskorelowane przekrojowo (|ρ| ≤ 0.24), zwroty ich portfeli umiarkowanie (0.1–0.4 –
+  wspólna ekspozycja czynnikowa, której hedge FW20 nie usuwa).
+* Atrybucja (leave-one-out): MOM niesie najwięcej przewagi brutto; REV ~0 brutto i ~2/3 obrotu (bez REV: obrót 36× → 11×,
+  SR netto −2.01 → −0.10); PEAD i VAL nic nie wnoszą.
+* Stabilność brutto nie zanika (B-EW 0.81 / 2.00 / 0.76), ale netto żaden wariant nie ma dodatniego Sharpe'a we
+  wszystkich podokresach.
+* Średni koszt ~1.1% na jednostkę obrotu (spready i wpływ na cenę w mWIG40 przy 2 mln PLN) – zjada 73% (B-SLOW)
+  do ponad 200% (B-EW) zwrotu brutto.
+* Błędy wykryte i naprawione w trakcie (permutacje z niedopasowanym obrotem; wyrównanie wag zmiennych w czasie –
+  H213/H214 INVALID) – opis w [`research/11_multisignal_portfolio.md`](research/11_multisignal_portfolio.md).
+
+**Żaden portfel nie przechodzi bramki → holdout nietknięty.** Rejestr: 224 wpisy (faza 3: 30 z 40).
+
+## 16. Podsumowanie fazy 3 – czy łączenie sygnałów coś dało?
+
+* **Tak, brutto:** kombinacja słabych, mało skorelowanych sygnałów daje wyższy i stabilniejszy Sharpe brutto niż
+  którykolwiek pojedynczy (1.35–1.43 vs 1.18), z przewagą informacyjną potwierdzoną testem permutacyjnym
+  z dopasowanym obrotem – i, inaczej niż relatywna mean-reversion z fazy 2, nie zanika po 2018 r.
+* **Nie, netto:** na polskim rynku przy kapitale 2 mln PLN i realnych kosztach (spready mWIG40 + wpływ na cenę +
+  prowizja detaliczna) koszty zjadają całą przewagę; najlepszy niskoobrotowy wariant (SR netto 0.31) jest równy
+  samemu momentum. Nawet przy zerowych kosztach (brutto ≤ 1.43) wynik nie przeszedłby DSR przy obecnej liczbie testów.
+* **Czy rozwijać?** Kierunek jest metodologicznie właściwy, ale bez zmiany jednego z trzech warunków nie da wyniku:
+  (1) dużo niższe koszty (prowizja instytucjonalna ~0.03–0.05% i egzekucja pasywna – próg opłacalności dla B-SLOW to
+  ~⅓ obecnych kosztów), (2) szersze uniwersum o lepszej płynności (np. CEE / DAX + WIG20 razem, więcej niezależnych
+  sygnałów), (3) sygnały o wolniejszym zaniku i niższym obrocie (fundamenty – value/quality z danych finansowych,
+  których tu nie było). Przy kosztach detalicznych i samych danych cenowych GPW – nie warto dalej rozwijać.

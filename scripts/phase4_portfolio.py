@@ -112,10 +112,10 @@ def build_signals(P, tradable, wig, beta_wig, idx_signal=None) -> dict[str, pd.D
 # ------------------------------------------------------------------ portfolio runs
 def targets_from_score(score: pd.DataFrame, rebal: pd.DatetimeIndex, shortable: pd.DataFrame,
                        long_only: bool = False) -> pd.DataFrame:
-    rows = {}
-    for d in rebal:
-        rows[d] = pf.build_weights(score.loc[d], shortable.loc[d], long_only=long_only)
-    return pd.DataFrame(rows).T.reindex(columns=score.columns).fillna(0.0)
+    sc = score.reindex(rebal).to_numpy(float)
+    sh = shortable.reindex(rebal).fillna(False).to_numpy(bool)
+    w = np.vstack([pf.build_weights_np(sc[i], sh[i], long_only=long_only) for i in range(len(rebal))])
+    return pd.DataFrame(w, index=rebal, columns=score.columns)
 
 
 def evaluate(name: str, res: pf.PortfolioResult, perm_p: float | None, log: bool, notes: str = "",
@@ -149,26 +149,48 @@ def evaluate(name: str, res: pf.PortfolioResult, perm_p: float | None, log: bool
     return s
 
 
-def permutation_p(score, rebal, shortable, P, fw, beta_fw, actual_sr, n=None, seed=config.SEED) -> float:
-    """Null: at each rebalance the scores are randomly re-assigned among the tradable stocks (same
-    constraints, same turnover regime). p = P(null net Sharpe >= actual)."""
-    n = n or (3 if "--fast" in sys.argv else 60)
+def permutation_p(score, rebal, shortable, P, fw, beta_fw, actual_sr, n=None, seed=config.SEED, band=0.005) -> float:
+    """Null: a STABLE random re-assignment of signal values to stocks. Each permutation draws a random key per
+    stock; on every rebalance date the scores of the tradable stocks (in original order) are handed to the
+    tradable stocks sorted by that key. The mapping only changes when the tradable set changes, so the null keeps
+    the signal's persistence and turnover (a week-by-week shuffle would inflate null turnover and favour any
+    persistent signal - flaw found in the first run, see research/11). p = P(null net Sharpe >= actual)."""
+    n = n or (3 if "--fast" in sys.argv else 200)
     rng = np.random.default_rng(seed)
+    base = score.reindex(rebal).to_numpy(float)
     null = []
     for _ in range(n):
-        sh = score.copy()
-        for d in rebal:
-            row = sh.loc[d]
-            ok = row.notna().to_numpy()
-            vals = row.to_numpy()[ok]
-            rng.shuffle(vals)
-            arr = row.to_numpy().copy()
-            arr[ok] = vals
-            sh.loc[d] = arr
-        tg = targets_from_score(sh, rebal, shortable)
-        rr = pf.run(tg, P, fw, beta_fw)
+        key = rng.random(base.shape[1])
+        arr = np.full_like(base, np.nan)
+        for i in range(len(base)):
+            ok = np.flatnonzero(np.isfinite(base[i]))
+            arr[i, ok[np.argsort(key[ok])]] = base[i, ok]
+        tg = targets_from_score(pd.DataFrame(arr, index=rebal, columns=score.columns), rebal, shortable)
+        rr = pf.run(tg, P, fw, beta_fw, band=band)
         null.append(metrics.sharpe(rr.daily.loc[rr.daily.index >= EVAL_START, "net"]))
     return float((1 + np.sum(np.array(null) >= actual_sr)) / (1 + n))
+
+
+def recompute_single_p() -> None:
+    """Re-run the corrected permutation test for the already-logged single-signal entries and fix their
+    p_value in the registry (with a note)."""
+    P, member, tradable, fw, wig, beta_fw, beta_wig = load()
+    Z = build_signals(P, tradable, wig, beta_wig)
+    shortable = tradable & (P["adv"] >= pf.CostModel().short_min_adv)
+    rebal = pf.rebalance_days(P["ret"].index)
+    rebal = rebal[rebal >= pd.Timestamp("2010-06-01")]
+    reg = registry.load()
+    for k in Z:
+        row = reg.index[reg["hypothesis"] == f"S-{k} single-signal L/S"]
+        if not len(row):
+            continue
+        sr = float(reg.loc[row[0], "sharpe_net"])
+        p = permutation_p(Z[k].where(tradable), rebal, shortable, P, fw, beta_fw, sr)
+        reg.loc[row[0], "p_value"] = round(p, 5)
+        reg.loc[row[0], "notes"] = (f"p recomputed with turnover-matched stable-assignment permutation (200x); "
+                                    f"first weekly-shuffle p was invalid. " + str(reg.loc[row[0], "notes"]))[:900]
+        print(k, "corrected p =", round(p, 4), flush=True)
+    reg.to_csv(config.HYPOTHESES_LOG, index=False)
 
 
 def main(variants: list[str]) -> None:
@@ -192,18 +214,35 @@ def main(variants: list[str]) -> None:
     results, single_daily = {}, {}
 
     def composite(weights: dict[str, float] | pd.DataFrame) -> pd.DataFrame:
-        num = sum((Z[k].fillna(0) * (weights[k] if isinstance(weights, dict) else weights[k].reindex(Z[k].index).ffill().fillna(1.0).to_numpy()[:, None]))
-                  for k in names)
-        den = sum((Z[k].notna() * (weights[k] if isinstance(weights, dict) else weights[k].reindex(Z[k].index).ffill().fillna(1.0).to_numpy()[:, None]))
-                  for k in names)
-        return (num / den.replace(0, np.nan)).where(tradable)
+        sess_idx = Z[names[0]].index
+        if isinstance(weights, dict) and any(isinstance(v, pd.Series) for v in weights.values()):
+            weights = pd.DataFrame(weights)
+        if isinstance(weights, dict):
+            W = pd.DataFrame({k: float(weights[k]) for k in names}, index=sess_idx)
+        else:
+            # time-varying weights: drop inf (warm-up), align to sessions with forward fill (weights may be
+            # dated on non-sessions, e.g. Jan 1), equal weights before the first estimate
+            W = weights[names].replace([np.inf, -np.inf], np.nan)
+            W.index = pd.DatetimeIndex(W.index).as_unit("ns")
+            W = W.reindex(W.index.union(pd.DatetimeIndex(sess_idx).as_unit("ns"))).ffill()
+            W = W.reindex(pd.DatetimeIndex(sess_idx).as_unit("ns"))
+            W.index = sess_idx
+            W = W.where(W.notna().all(axis=1), 1.0)
+        W = W.div(W.sum(axis=1), axis=0)
+        num = sum(Z[k].fillna(0).mul(W[k], axis=0) for k in names)
+        den = sum(Z[k].notna().mul(W[k], axis=0) for k in names)
+        out = (num / den.replace(0, np.nan)).where(tradable)
+        cov = out.reindex(rebal).notna().sum(axis=1)
+        assert (cov[rebal >= EVAL_START] > 10).all(), "composite has (almost) no scores on some rebalance dates"
+        return out
 
-    def run_and_eval(label, score, long_only=False, band=0.005, perm=True, notes=""):
-        tg = targets_from_score(score, rebal, shortable, long_only)
+    def run_and_eval(label, score, long_only=False, band=0.005, perm=True, notes="", rebal_days=None):
+        rb = rebal if rebal_days is None else rebal_days
+        tg = targets_from_score(score, rb, shortable, long_only)
         res = pf.run(tg, P, fw, beta_fw, band=band)
         res2 = pf.run(tg, P, fw, beta_fw, band=band, cost_mult=2.0)
         sr = metrics.sharpe(res.daily.loc[res.daily.index >= EVAL_START, "net"])
-        p = permutation_p(score, rebal, shortable, P, fw, beta_fw, sr) if (perm and not long_only) else None
+        p = permutation_p(score, rb, shortable, P, fw, beta_fw, sr, band=band) if (perm and not long_only) else None
         s = evaluate(label, res, p, log=True, notes=notes, res2x=res2)
         results[label] = s
         res.daily.to_parquet(OUT / f"daily_{label.split()[0]}.parquet")
@@ -227,6 +266,12 @@ def main(variants: list[str]) -> None:
         run_and_eval("B-LO equal-weight long-only + FW20", composite({k: 1.0 for k in names}), long_only=True)
     if "NOBAND" in variants:
         run_and_eval("B-EW-noband equal-weight, no trade band", composite({k: 1.0 for k in names}), band=0.0, perm=False)
+    if "SLOW" in variants:  # POST-HOC (after LOO showed REV drives turnover): slow signals, monthly, 1% band
+        mon = P["ret"].index.to_series().groupby(P["ret"].index.to_period("M")).max()
+        mon = pd.DatetimeIndex(mon[mon >= pd.Timestamp("2010-06-01")].to_numpy())
+        run_and_eval("B-SLOW (POST-HOC) MOM+LVOL+PEAD+VAL monthly, band 1%",
+                     composite({k: (0.0 if k == "REV" else 1.0) for k in names}), band=0.01, rebal_days=mon,
+                     notes="post-hoc variant motivated by leave-one-out (H217); not pre-registered")
     if "LOO" in variants:
         for k in names:
             run_and_eval(f"B-EW-minus-{k} leave-one-out", composite({j: (0.0 if j == k else 1.0) for j in names}),
@@ -266,5 +311,8 @@ def ridge_weights(Z, P, beta_wig, wig, rebal, names) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+    if "--recompute-single-p" in sys.argv:
+        recompute_single_p()
+        sys.exit(0)
     v = [a for a in sys.argv[1:] if not a.startswith("--")] or ["singles", "EW", "IV", "WF", "LO", "NOBAND", "LOO"]
     main(v)

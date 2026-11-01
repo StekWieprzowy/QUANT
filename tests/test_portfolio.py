@@ -58,3 +58,14 @@ def test_build_weights_caps_and_shorts():
 def test_rebalance_days_last_of_week():
     s = pd.bdate_range("2021-01-04", periods=10).drop(pd.Timestamp("2021-01-08"))
     assert list(pf.rebalance_days(s)) == [pd.Timestamp("2021-01-07"), pd.Timestamp("2021-01-15")]
+
+
+def test_build_weights_np_matches_pandas():
+    rng = np.random.default_rng(0)
+    s = pd.Series(rng.normal(size=40), index=[f"S{i}" for i in range(40)])
+    s.iloc[[3, 7]] = np.nan
+    sh = pd.Series(rng.random(40) > 0.4, index=s.index)
+    for lo in (False, True):
+        a = pf.build_weights(s, sh, long_only=lo).reindex(s.index).fillna(0).to_numpy()
+        b = pf.build_weights_np(s.to_numpy(), sh.to_numpy(), long_only=lo)
+        np.testing.assert_allclose(a, b, atol=1e-12)
