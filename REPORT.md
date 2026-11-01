@@ -273,3 +273,30 @@ Praktyczna ściąga: [`DISCRETIONARY_PLAYBOOK.md`](DISCRETIONARY_PLAYBOOK.md).
 * **Zamknąć:** wszystko, co próbuje przewidzieć kierunek FW20 z danych dziennych (kalendarz, trend, lead-lag,
   FX, RPP, wygasanie, ML) – zero sygnału w ~100 testach; dźwignie kosztowe dla mean-reversion (niszczą sygnał).
 * Kandydata do holdoutu nadal brak – **holdout nietknięty**. Rejestr: 194 wpisy (budżet 228).
+
+---
+
+# FAZA 3 (2026-11-01): portfel wielu słabych sygnałów
+
+Pre-rejestracja (model kosztów zależny od płynności, uniwersum, sygnały, konstrukcja, lista wpisów) zapisana
+i zacommitowana przed pierwszym obliczeniem: [`research/09_phase3_preregistration.md`](research/09_phase3_preregistration.md).
+Nowe dane: pełne oficjalne archiwum akcji GPW 2009–2022H1 (661 spółek, także wycofanych; zwrot = GPW „Zmiana”,
+korygowana o dywidendy i splity), historyczne składy WIG20/mWIG40/sWIG80 (70 rewizji) i daty ogłoszeń zmian
+z kalendarium GPW Benchmark (2012–2026). Budżet rejestru: +40 (234).
+
+## 14. Część A – zmiany składu indeksów (H195–H206)
+
+| indeks / typ | okno | N | średnia AR | p | netto (handlowalne) |
+|---|---|---|---|---|---|
+| WIG20 dodanie | [ogł+1, rewizja] / [rew+1, +10] | 20 | +1.7% / −1.6% | 0.30 / 0.26 | +0.4% / +0.2% |
+| WIG20 usunięcie | j.w. | 20 | −3.0% / −0.1% | 0.39 / 0.93 | +1.3% / −1.7% |
+| mWIG40 dodanie | j.w. | 97 | +2.6% / −0.6% | 0.048 / 0.56 | +0.4% / −1.2% |
+| mWIG40 usunięcie | j.w. | 91 | **−3.4%** / +1.9% | **0.009** / 0.039 | −0.9% / −1.4% |
+| sWIG80 dodanie | j.w. | 282 | −1.1% / +0.9% | 0.08 / 0.07 | −4.7% / −3.2% |
+| sWIG80 usunięcie | j.w. | 275 | −1.6% / −0.9% | 0.08 / 0.20 | −2.9% / −4.7% |
+
+**Żaden wynik nie przeżywa BH** (łącznie z 70 p-value w rejestrze). Najsilniejszy efekt (spadek usuwanych z mWIG40
+przed rewizją) jest skupiony w spółkach niehandlowalnych w kryzysie (ADV < 0.5 mln PLN: −4.5%, p=0.007;
+handlowalne: −1.6%, p=0.44) – usunięcie z indeksu jest skutkiem załamania spółki, nie przyczyną spadku. Po kosztach
+zależnych od płynności żadne okno nie jest opłacalne. Zgodnie z pre-rejestracją sygnał IDX **nie wchodzi** do
+części B. Szczegóły i weryfikacja ręczna: [`research/10_index_changes.md`](research/10_index_changes.md).
